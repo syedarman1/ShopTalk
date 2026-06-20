@@ -1,0 +1,16 @@
+# dependencies
+**/node_modules/
+
+# next.js
+frontend/.next/
+frontend/out/
+
+# sqlite runtime db
+backend/mockbase.db
+backend/mockbase.db-wal
+backend/mockbase.db-shm
+
+# logs / env
+*.log
+.env
+.env.local

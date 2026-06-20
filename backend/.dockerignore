@@ -1,0 +1,9 @@
+node_modules
+mockbase.db
+mockbase.db-wal
+mockbase.db-shm
+.env
+.env.local
+npm-debug.log
+Dockerfile
+.dockerignore

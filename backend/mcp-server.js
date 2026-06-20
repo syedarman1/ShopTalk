@@ -1,0 +1,28 @@
+// mcp-server.js — standalone MockBase MCP server over stdio.
+//
+// Thin wrapper: the tool definitions live in mcp-tools.js (shared with the
+// in-process HTTP endpoint in server.js). Here we wire them to the stdio
+// transport and announce mutations to the dashboard via notifyDashboard, since
+// this runs as a separate process from the Express server.
+//
+// For hosted / cloud setups you usually don't need this file at all — server.js
+// now serves the same tools over streamable HTTP at /mcp.
+
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+
+import { createMcpServer } from "./mcp-tools.js";
+import { notifyDashboard } from "./notify.js";
+
+const server = createMcpServer(notifyDashboard);
+
+async function main() {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  // stdout is the MCP transport — all logs must go to stderr.
+  console.error("[mockbase-mcp] server ready on stdio");
+}
+
+main().catch((err) => {
+  console.error("[mockbase-mcp] fatal:", err);
+  process.exit(1);
+});
