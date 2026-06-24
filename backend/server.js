@@ -1,13 +1,12 @@
-// server.js — MockBase web backend.
+// server.js — ShopTalk web backend.
 // Serves the REST API the dashboard reads from, and owns the Server-Sent
 // Events stream that pushes live updates to every connected browser. The MCP
-// process (mcp-server.js) writes to the same SQLite file and then pings
+// process (mcp-server.js) calls the Shopify Admin API and then pings
 // POST /internal/broadcast so those mutations show up in the UI instantly.
 
 import express from "express";
 import cors from "cors";
-import { getTables, getTableData } from "./db.js";
-import { seedMockData } from "./seed.js";
+import { listStoreSummaries } from "./stores.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createMcpServer } from "./mcp-tools.js";
 
@@ -90,35 +89,9 @@ app.get("/api/health", (_req, res) => {
   res.json({ ok: true, clients: clients.size });
 });
 
-// All table schemas + row counts.
-app.get("/api/tables", (_req, res) => {
+app.get("/api/stores", (_req, res) => {
   try {
-    res.json({ tables: getTables() });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// All rows for one table.
-app.get("/api/data/:table", (req, res) => {
-  try {
-    const rows = getTableData(req.params.table);
-    res.json({ table: req.params.table, rows });
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
-
-// "Mock Data" button target — seeds the DB then notifies the stream.
-app.post("/api/seed", (_req, res) => {
-  try {
-    const summary = seedMockData();
-    broadcast({
-      type: "seed",
-      tool: "seed",
-      message: summary,
-    });
-    res.json({ ok: true, summary });
+    res.json({ stores: listStoreSummaries() });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -173,7 +146,7 @@ async function handleMcp(req, res) {
     await server.connect(transport);
     await transport.handleRequest(req, res, req.body);
   } catch (err) {
-    console.error("[mockbase-mcp-http] error:", err.message);
+    console.error("[shoptalk-mcp-http] error:", err.message);
     if (!res.headersSent) res.status(500).json({ error: err.message });
   }
 }
@@ -183,10 +156,8 @@ app.get("/mcp", handleMcp);
 app.delete("/mcp", handleMcp);
 
 app.listen(PORT, () => {
-  console.log(`[mockbase] API + SSE listening on http://localhost:${PORT}`);
-  console.log(`[mockbase]   GET  /api/tables`);
-  console.log(`[mockbase]   GET  /api/data/:table`);
-  console.log(`[mockbase]   GET  /api/events   (SSE)`);
-  console.log(`[mockbase]   POST /api/seed`);
-  console.log(`[mockbase]   ALL  /mcp          (MCP streamable HTTP)`);
+  console.log(`[shoptalk] API + SSE listening on http://localhost:${PORT}`);
+  console.log(`[shoptalk]   GET  /api/stores`);
+  console.log(`[shoptalk]   GET  /api/events   (SSE)`);
+  console.log(`[shoptalk]   ALL  /mcp          (MCP streamable HTTP)`);
 });
