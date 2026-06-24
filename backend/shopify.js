@@ -72,3 +72,175 @@ export function aggregateSales(perStore) {
   }
   return { byCurrency, orderCount };
 }
+
+// ---------- Network client ----------
+
+const DEFAULT_LIMIT = 10;
+const SALES_PAGE = 250; // Admin API max per page; v1 reads one page.
+
+/**
+ * Run an Admin GraphQL query against a store object.
+ * Throws on transport, HTTP, or GraphQL errors with a clear message.
+ */
+export async function shopifyGraphQL(store, query, variables = {}) {
+  const url = `https://${store.shopDomain}/admin/api/${store.apiVersion}/graphql.json`;
+  const body = JSON.stringify({ query, variables });
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Shopify-Access-Token": store.adminAccessToken,
+      },
+      body,
+    });
+
+    if (res.status === 429) {
+      // Rate-limited: back off once, then retry.
+      await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+      continue;
+    }
+    if (res.status === 401 || res.status === 403) {
+      throw new Error(
+        `Authentication failed for store "${store.key}" (HTTP ${res.status}). ` +
+          "Check the Admin API access token and its read scopes."
+      );
+    }
+    if (!res.ok) {
+      throw new Error(`Shopify API error for "${store.key}": HTTP ${res.status}.`);
+    }
+
+    const json = await res.json();
+    if (json.errors?.length) {
+      throw new Error(`GraphQL error for "${store.key}": ${json.errors[0].message}`);
+    }
+    return json.data;
+  }
+  throw new Error(`Shopify API for "${store.key}" is rate-limited; try again shortly.`);
+}
+
+const ORDER_FIELDS = `
+  name createdAt displayFulfillmentStatus displayFinancialStatus
+  currentTotalPriceSet { shopMoney { amount currencyCode } }
+  customer { displayName }
+`;
+
+/** Sales for one store over a period (single page of up to 250 orders). */
+export async function getSales(storeKey, period = "today") {
+  const store = resolveStore(storeKey);
+  const { since, label } = periodToRange(period, new Date());
+  const query = `
+    query($q: String!) {
+      orders(first: ${SALES_PAGE}, query: $q, sortKey: CREATED_AT, reverse: true) {
+        edges { node { ${ORDER_FIELDS} } }
+        pageInfo { hasNextPage }
+      }
+    }`;
+  const data = await shopifyGraphQL(store, query, {
+    q: `created_at:>=${since}`,
+  });
+  const edges = data.orders.edges;
+  const totalsByCurrency = {};
+  for (const { node } of edges) {
+    const o = shapeOrder(node);
+    if (o.currency != null && o.total != null) {
+      totalsByCurrency[o.currency] = (totalsByCurrency[o.currency] || 0) + o.total;
+    }
+  }
+  const orderCount = edges.length;
+  const averageByCurrency = {};
+  for (const [cur, total] of Object.entries(totalsByCurrency)) {
+    averageByCurrency[cur] = orderCount ? total / orderCount : 0;
+  }
+  return {
+    store: store.key,
+    label,
+    orderCount,
+    totalsByCurrency,
+    averageByCurrency,
+    capped: data.orders.pageInfo.hasNextPage, // true => more than 250 orders in period
+  };
+}
+
+/** Sales rolled up across every configured store. */
+export async function getSalesAllStores(period = "today") {
+  const perStore = [];
+  for (const store of getStores()) {
+    perStore.push(await getSales(store.key, period));
+  }
+  const combined = aggregateSales(perStore);
+  return { perStore, combined };
+}
+
+/** Recent orders for one store, optionally filtered to unfulfilled. */
+export async function getOrders(storeKey, { status, limit = DEFAULT_LIMIT } = {}) {
+  const store = resolveStore(storeKey);
+  const filter = status === "unfulfilled" ? "fulfillment_status:unfulfilled" : null;
+  const query = `
+    query($q: String, $n: Int!) {
+      orders(first: $n, query: $q, sortKey: CREATED_AT, reverse: true) {
+        edges { node { ${ORDER_FIELDS} } }
+      }
+    }`;
+  const data = await shopifyGraphQL(store, query, { q: filter, n: limit });
+  return { store: store.key, orders: data.orders.edges.map((e) => shapeOrder(e.node)) };
+}
+
+/** A single order by its name (e.g. "#1001"). */
+export async function getOrder(storeKey, name) {
+  const store = resolveStore(storeKey);
+  const clean = name.startsWith("#") ? name : `#${name}`;
+  const query = `
+    query($q: String!) {
+      orders(first: 1, query: $q) {
+        edges { node {
+          ${ORDER_FIELDS}
+          lineItems(first: 20) { edges { node { title quantity } } }
+        } }
+      }
+    }`;
+  const data = await shopifyGraphQL(store, query, { q: `name:${clean}` });
+  const edge = data.orders.edges[0];
+  if (!edge) return { store: store.key, order: null };
+  const order = shapeOrder(edge.node);
+  order.lineItems = edge.node.lineItems.edges.map((e) => ({
+    title: e.node.title,
+    quantity: e.node.quantity,
+  }));
+  return { store: store.key, order };
+}
+
+/** Search products by text; lists by title when no query is given. */
+export async function searchProducts(storeKey, { query: q, limit = DEFAULT_LIMIT } = {}) {
+  const store = resolveStore(storeKey);
+  // Admin products has no sales-based sort; RELEVANCE needs a query, else TITLE.
+  const sortKey = q ? "RELEVANCE" : "TITLE";
+  const gql = `
+    query($q: String, $n: Int!) {
+      products(first: $n, query: $q, sortKey: ${sortKey}) {
+        edges { node {
+          title status totalInventory
+          priceRangeV2 { minVariantPrice { amount currencyCode } }
+        } }
+      }
+    }`;
+  const data = await shopifyGraphQL(store, gql, { q: q || null, n: limit });
+  return { store: store.key, products: data.products.edges.map((e) => shapeProduct(e.node)) };
+}
+
+/** Search customers; pass query "orders_count:>1" for repeat customers. */
+export async function searchCustomers(storeKey, { query: q, limit = DEFAULT_LIMIT } = {}) {
+  const store = resolveStore(storeKey);
+  const gql = `
+    query($q: String, $n: Int!) {
+      customers(first: $n, query: $q) {
+        edges { node {
+          displayName defaultEmailAddress { emailAddress } numberOfOrders
+          amountSpent { amount currencyCode }
+        } }
+      }
+    }`;
+  const data = await shopifyGraphQL(store, gql, { q: q || null, n: limit });
+  return { store: store.key, customers: data.customers.edges.map((e) => shapeCustomer(e.node)) };
+}
