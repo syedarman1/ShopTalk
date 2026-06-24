@@ -1,65 +1,25 @@
 "use client";
-
-import { useState } from "react";
-import { useMockbase } from "@/lib/useMockbase";
-import { Sidebar } from "@/components/Sidebar";
-import { Header } from "@/components/Header";
-import { DataTable } from "@/components/DataTable";
-import { ActivityLog } from "@/components/ActivityLog";
+import { useShopTalk } from "../lib/useShopTalk";
+import Header from "../components/Header";
+import ResultPanel from "../components/ResultPanel";
+import ActivityLog from "../components/ActivityLog";
 
 export default function Dashboard() {
-  const {
-    tables,
-    selectedTable,
-    selectedSchema,
-    selectTable,
-    rows,
-    loadingRows,
-    activity,
-    status,
-    lastEventTable,
-    seed,
-    refresh,
-  } = useMockbase();
-
-  const [seeding, setSeeding] = useState(false);
-  const handleSeed = async () => {
-    setSeeding(true);
-    await seed();
-    setTimeout(() => setSeeding(false), 600);
-  };
-
+  const { activity, status, latest, stores } = useShopTalk();
   return (
-    <div className="flex h-screen overflow-hidden">
-      <Sidebar
-        tables={tables}
-        selectedTable={selectedTable}
-        onSelect={selectTable}
-        lastEventTable={lastEventTable}
-      />
-
-      <div className="flex min-w-0 flex-1 flex-col">
-        <Header
-          status={status}
-          onSeed={handleSeed}
-          onRefresh={refresh}
-          seeding={seeding}
-        />
-
-        <main className="grid min-h-0 flex-1 grid-cols-1 gap-4 p-4 lg:grid-cols-3">
-          <div className="flex min-h-0 flex-col lg:col-span-2">
-            <DataTable
-              table={selectedTable}
-              schema={selectedSchema}
-              rows={rows}
-              loading={loadingRows}
-            />
-          </div>
-          <div className="flex min-h-0 flex-col lg:col-span-1">
-            <ActivityLog activity={activity} status={status} />
-          </div>
-        </main>
-      </div>
+    <div className="flex h-screen flex-col">
+      <Header status={status} stores={stores} />
+      <main className="grid flex-1 grid-cols-1 gap-4 overflow-hidden p-4 lg:grid-cols-[1fr_360px]">
+        <section className="overflow-auto rounded-lg border border-border bg-card p-6">
+          <ResultPanel latest={latest} />
+        </section>
+        <aside className="overflow-auto rounded-lg border border-border bg-card p-2">
+          <h2 className="px-2 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Live Activity
+          </h2>
+          <ActivityLog activity={activity} />
+        </aside>
+      </main>
     </div>
   );
 }

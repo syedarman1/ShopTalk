@@ -1,8 +1,6 @@
 "use client";
 
-import { Sparkles, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { Button } from "./ui";
 
 const STATUS = {
   live: { label: "Live", dot: "bg-emerald-500/80", text: "text-muted-foreground" },
@@ -14,16 +12,16 @@ const STATUS = {
   offline: { label: "Offline", dot: "bg-red-500/70", text: "text-muted-foreground" },
 };
 
-export function Header({ status, onSeed, onRefresh, seeding }) {
+export default function Header({ status, stores }) {
   const s = STATUS[status] || STATUS.connecting;
   return (
     <header className="flex items-center justify-between border-b border-border bg-card/40 px-5 py-3">
       <div>
         <h1 className="text-base font-semibold tracking-tight">
-          Real-time Database Playground
+          ShopTalk
         </h1>
         <p className="text-xs text-muted-foreground">
-          Every MCP mutation streams here live over SSE.
+          Ask questions about your Shopify stores in plain English.
         </p>
       </div>
 
@@ -47,16 +45,10 @@ export function Header({ status, onSeed, onRefresh, seeding }) {
             />
           </span>
           <span className={cn("text-xs font-medium", s.text)}>{s.label}</span>
+          <span className="text-xs text-muted-foreground">
+            {stores.length} {stores.length === 1 ? "store" : "stores"}
+          </span>
         </div>
-
-        <Button variant="outline" size="icon" onClick={onRefresh} title="Refresh">
-          <RefreshCw className="h-4 w-4" />
-        </Button>
-
-        <Button onClick={onSeed} disabled={seeding}>
-          <Sparkles className="h-4 w-4" />
-          Mock Data
-        </Button>
       </div>
     </header>
   );
