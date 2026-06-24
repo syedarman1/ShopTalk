@@ -24,11 +24,13 @@ export function useShopTalk() {
   }, []);
 
   const connect = useCallback(() => {
+    lastSeen.current = Date.now();
     sourceRef.current?.close();
     const source = new EventSource(`${API_BASE}/api/events`);
     sourceRef.current = source;
 
     source.onopen = () => {
+      lastSeen.current = Date.now();
       setStatus("live");
       fetchStores();
     };
