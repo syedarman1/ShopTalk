@@ -1,6 +1,6 @@
 // stores.js — multi-store registry for ShopTalk.
 // Stores are configured via the SHOPIFY_STORES env var: a JSON array of
-// { key, label, shopDomain, adminAccessToken, apiVersion? } objects.
+// { key, label, shopDomain, clientId, clientSecret, apiVersion? } objects.
 
 const DEFAULT_API_VERSION = "2026-01";
 
@@ -14,7 +14,7 @@ export function parseStoresEnv(env) {
     throw new Error(
       "SHOPIFY_STORES is not set. Provide a JSON array of stores " +
         '(e.g. SHOPIFY_STORES=\'[{"key":"main","label":"Main",' +
-        '"shopDomain":"main.myshopify.com","adminAccessToken":"shpat_..."}]\').'
+        '"shopDomain":"main.myshopify.com","clientId":"...","clientSecret":"shpss_..."}]\').'
     );
   }
   let parsed;
@@ -27,7 +27,7 @@ export function parseStoresEnv(env) {
     throw new Error("SHOPIFY_STORES must be a non-empty JSON array.");
   }
   return parsed.map((s, i) => {
-    for (const field of ["key", "label", "shopDomain", "adminAccessToken"]) {
+    for (const field of ["key", "label", "shopDomain", "clientId", "clientSecret"]) {
       if (!s[field]) {
         throw new Error(`Store at index ${i} is missing required field "${field}".`);
       }
@@ -36,7 +36,8 @@ export function parseStoresEnv(env) {
       key: s.key,
       label: s.label,
       shopDomain: s.shopDomain,
-      adminAccessToken: s.adminAccessToken,
+      clientId: s.clientId,
+      clientSecret: s.clientSecret,
       apiVersion: s.apiVersion || DEFAULT_API_VERSION,
     };
   });

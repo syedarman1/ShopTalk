@@ -78,33 +78,72 @@ export function aggregateSales(perStore) {
 const DEFAULT_LIMIT = 10;
 const SALES_PAGE = 250; // Admin API max per page; v1 reads one page.
 
+// ---- Access token (client credentials grant) ----
+// Shopify removed static admin tokens in 2026; exchange the app's
+// clientId/clientSecret for a ~24h token and cache it per store in-process.
+const tokenCache = new Map(); // store.key -> { token, expiresAt (ms epoch) }
+
+/** Get a valid Admin API access token for the store, exchanging/refreshing as needed. */
+export async function getAccessToken(store) {
+  const cached = tokenCache.get(store.key);
+  if (cached && Date.now() < cached.expiresAt) return cached.token;
+
+  const res = await fetch(`https://${store.shopDomain}/admin/oauth/access_token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "client_credentials",
+      client_id: store.clientId,
+      client_secret: store.clientSecret,
+    }),
+  });
+  if (res.status === 401 || res.status === 403) {
+    throw new Error(
+      `Token exchange failed for store "${store.key}" (HTTP ${res.status}). ` +
+        "Check clientId/clientSecret and that the app is installed on the store."
+    );
+  }
+  if (!res.ok) {
+    throw new Error(`Token exchange error for "${store.key}": HTTP ${res.status}.`);
+  }
+  const json = await res.json();
+  // Refresh a minute before the ~24h expiry to avoid edge-of-expiry failures.
+  const ttl = ((json.expires_in ?? 86399) - 60) * 1000;
+  tokenCache.set(store.key, { token: json.access_token, expiresAt: Date.now() + ttl });
+  return json.access_token;
+}
+
 /**
- * Run an Admin GraphQL query against a store object.
- * Throws on transport, HTTP, or GraphQL errors with a clear message.
+ * Run an Admin GraphQL query against a store object. Fetches/caches a token via
+ * the client credentials grant; on a 401 it drops the cached token and retries
+ * once with a fresh one; on a 429 it backs off and retries. Throws on auth,
+ * HTTP, or GraphQL errors with a clear message.
  */
 export async function shopifyGraphQL(store, query, variables = {}) {
   const url = `https://${store.shopDomain}/admin/api/${store.apiVersion}/graphql.json`;
   const body = JSON.stringify({ query, variables });
 
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const token = await getAccessToken(store);
     const res = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-Shopify-Access-Token": store.adminAccessToken,
+        "X-Shopify-Access-Token": token,
       },
       body,
     });
 
     if (res.status === 429) {
-      // Rate-limited: back off once, then retry.
       await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
       continue;
     }
     if (res.status === 401 || res.status === 403) {
+      tokenCache.delete(store.key);
+      if (attempt === 0) continue;
       throw new Error(
         `Authentication failed for store "${store.key}" (HTTP ${res.status}). ` +
-          "Check the Admin API access token and its read scopes."
+          "Check the app's scopes and that it is installed on the store."
       );
     }
     if (!res.ok) {
@@ -117,7 +156,7 @@ export async function shopifyGraphQL(store, query, variables = {}) {
     }
     return json.data;
   }
-  throw new Error(`Shopify API for "${store.key}" is rate-limited; try again shortly.`);
+  throw new Error(`Shopify API for "${store.key}" failed after retries.`);
 }
 
 const ORDER_FIELDS = `

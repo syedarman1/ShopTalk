@@ -4,8 +4,8 @@ import { parseStoresEnv } from "../stores.js";
 
 const ENV = {
   SHOPIFY_STORES: JSON.stringify([
-    { key: "main", label: "Main Store", shopDomain: "main.myshopify.com", adminAccessToken: "tok_main" },
-    { key: "eu", label: "EU Store", shopDomain: "eu.myshopify.com", adminAccessToken: "tok_eu", apiVersion: "2025-10" },
+    { key: "main", label: "Main Store", shopDomain: "main.myshopify.com", clientId: "id_main", clientSecret: "secret_main" },
+    { key: "eu", label: "EU Store", shopDomain: "eu.myshopify.com", clientId: "id_eu", clientSecret: "secret_eu", apiVersion: "2025-10" },
   ]),
 };
 
@@ -23,5 +23,5 @@ test("parseStoresEnv throws a clear error on missing env", () => {
 
 test("parseStoresEnv throws when a store is missing required fields", () => {
   const bad = { SHOPIFY_STORES: JSON.stringify([{ key: "x", label: "X" }]) };
-  assert.throws(() => parseStoresEnv(bad), /shopDomain|adminAccessToken/);
+  assert.throws(() => parseStoresEnv(bad), /shopDomain|clientId|clientSecret/);
 });
