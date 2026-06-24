@@ -1,248 +1,153 @@
-# MockBase — Real-time Text-to-Database MCP Playground
+# ShopTalk — Text Poke to ask your Shopify store anything
 
-MockBase lets you manage a local SQLite database through **Model Context
-Protocol (MCP)** tools and watch every mutation appear **instantly** in a
-Next.js dashboard. Point an MCP client (Poke, Claude Desktop, Cursor, the MCP
-Inspector…) at the MCP server, ask it to create a table or insert a row, and
-the change streams into the browser over Server-Sent Events — no refresh.
+ShopTalk is an [MCP](https://modelcontextprotocol.io) server that lets you text
+[Poke](https://poke.com) over iMessage to ask read-only questions about your
+Shopify store(s) — "how much did I sell today?", "show my last 5 orders",
+"who are my repeat customers?" — and get real answers back. A live web dashboard
+streams every query as it happens.
 
-```
- MCP client (Poke) ──HTTP /mcp──▶ Express (server.js: API + SSE + MCP) ──▶ mockbase.db (SQLite)
-                                        │
-                                        └──SSE /api/events──▶ Next.js dashboard
+It's a fork of the MockBase architecture: the same one-process Express + SSE +
+MCP backbone and Next.js dashboard, with the data layer swapped from SQLite to
+the **Shopify Admin GraphQL API**.
 
- Local-only alternative: mcp-server.js (stdio) ──▶ same DB ──▶ /internal/broadcast ──▶ Express
-```
-
----
-
-## Project structure
+## How it works
 
 ```
-mockbase/
-├── backend/                # Node.js: SQLite + Express API + SSE + MCP server
-│   ├── db.js               # better-sqlite3 layer + validated helpers
-│   ├── server.js           # Express REST API + SSE broadcaster
-│   ├── mcp-server.js       # MCP stdio server (create_table, insert_row, query_data)
-│   ├── notify.js           # MCP → dashboard broadcast bridge
-│   └── seed.js             # default dataset (also the "Mock Data" target)
-└── frontend/               # Next.js (App Router) + Tailwind + shadcn-style UI
-    ├── app/                # layout + dashboard page
-    ├── components/         # Sidebar, DataTable, ActivityLog, Header, ui primitives
-    └── lib/useMockbase.js  # SSE listener + data-fetching hook
+iMessage ──> Poke ──(MCP over streamable HTTP)──> ShopTalk /mcp
+                                                     │
+                                       reads (read-only) via
+                                       Shopify Admin GraphQL API
+                                                     │
+                              every tool call broadcasts over SSE
+                                                     ▼
+                                        Next.js live dashboard
 ```
 
----
+One Express process serves three things in-process:
 
-## Prerequisites
+1. **`/mcp`** — the MCP server (stateless streamable HTTP) that Poke connects to.
+2. **`/api/events`** — an SSE stream the dashboard subscribes to; every tool call
+   is broadcast here in real time.
+3. REST helpers (`/api/health`, `/api/stores`) for the dashboard.
 
-- **Node.js 18+** (built and tested on Node 22)
-- npm
+### MCP tools (all read-only)
 
----
+| Tool | What it answers |
+|------|-----------------|
+| `list_stores` | Which stores are configured. |
+| `get_sales` | Revenue, order count, AOV for `today`/`7d`/`30d`. Per store or rolled up across all stores. |
+| `get_orders` | Recent orders, optionally only unfulfilled. |
+| `get_order` | Full detail for one order by number (e.g. `#1001`). |
+| `search_products` | Product search / listing. |
+| `search_customers` | Customer search (e.g. `orders_count:>1` for repeat customers). |
 
-## 1. Run the backend (API + SSE)
+Every tool takes an optional `store` key; omit it to use the default store (or,
+for `get_sales`, to roll up across all stores). There is **no** way to change
+store data — the token only ever holds read scopes.
+
+## Setup
+
+### 1. Create a Shopify app and get credentials
+
+Shopify removed static admin API tokens in 2026, so ShopTalk uses the
+**client credentials grant** (the supported method for an app you own running on
+a store you own).
+
+1. Create an app in the Shopify **[Dev Dashboard](https://dev.shopify.com)** under
+   your organization.
+2. Set Admin API scopes on the app version: `read_orders`, `read_products`,
+   `read_customers`. **Release** that version (client credentials reads scopes
+   from the active released version — saving alone isn't enough).
+3. Install the app on your store, then copy its **Client ID** (API key) and
+   **Client Secret** (`shpss_…`). There is no static token — ShopTalk exchanges
+   these for a short-lived (24h) access token automatically and refreshes it.
+4. Find your store's permanent **`*.myshopify.com`** domain (Settings → Domains,
+   or your admin URL). This is *not* your custom storefront domain.
+
+### 2. Configure the backend
+
+Create `backend/.env` (gitignored — never commit it):
+
+```
+PORT=4000
+# Single-quote the whole value so Node's --env-file parser keeps it intact
+# (an unquoted '#' is treated as a comment and would truncate the JSON).
+SHOPIFY_STORES='[{"key":"main","label":"Main Store","shopDomain":"your-store.myshopify.com","clientId":"your_api_key","clientSecret":"shpss_xxx","apiVersion":"2026-04"}]'
+```
+
+`SHOPIFY_STORES` is a JSON array — add more `{…}` objects for more stores. Each
+store needs `key`, `label`, `shopDomain`, `clientId`, `clientSecret`; `apiVersion`
+is optional (defaults to a recent stable version).
+
+### 3. Run it locally
 
 ```bash
-cd backend
-npm install
-npm start          # http://localhost:4000
+# backend
+cd backend && npm install && node --env-file=.env server.js   # http://localhost:4000
+
+# frontend (separate terminal)
+cd frontend && npm install && npm run dev                      # http://localhost:3000
 ```
 
-On first run `mockbase.db` is created automatically. Seed the default data
-(`users`, `products`) any time with:
+Open the dashboard at http://localhost:3000 — the header should show **live** and
+your store count. Run the read-only smoke test against your real store any time:
 
 ```bash
-npm run seed
+cd backend && node --env-file=.env smoke.js
 ```
 
-REST endpoints:
-
-| Method | Route                | Description                                  |
-| ------ | -------------------- | -------------------------------------------- |
-| GET    | `/api/tables`        | All table schemas + row counts               |
-| GET    | `/api/data/:table`   | All rows for a table                         |
-| GET    | `/api/events`        | **SSE** stream of live database changes      |
-| POST   | `/api/seed`          | Seed/top-up mock data (the dashboard button) |
-| GET    | `/api/health`        | Health + connected SSE client count          |
-
----
-
-## 2. Run the frontend (dashboard)
-
-In a second terminal:
+### 4. Connect Poke
 
 ```bash
-cd frontend
-npm install
-npm run dev        # http://localhost:3000
+npx poke@latest login
+npx poke@latest tunnel http://localhost:4000/mcp -n ShopTalk     # local
+# or, when deployed:
+npx poke@latest mcp add https://<your-host>/mcp -n ShopTalk
 ```
 
-The dashboard reads the backend URL from `frontend/.env.local`:
-
-```
-NEXT_PUBLIC_API_BASE=http://localhost:4000
-```
-
-What you get:
-
-- **Schema viewer** (left sidebar) — every table, its columns, types, primary
-  keys, and live row counts. The active table expands to show its columns.
-- **Real-time data grid** — rows for the selected table; newly inserted rows
-  flash as they arrive over SSE.
-- **Activity log** — a live feed of incoming MCP traffic
-  (e.g. `insert_row → users`), colour-coded by tool.
-- **Mock Data button** — seeds a default table so you can test immediately.
-
----
-
-## 3. Connect the MCP server
-
-`server.js` serves the tools over **streamable HTTP at `/mcp`** — the
-recommended transport (see *Connecting to Poke* below and *Deploy*); no stdio
-bridge or supergateway required. For local command-based clients (Claude
-Desktop, Cursor, MCP Inspector) there's also a **stdio** server, `mcp-server.js`:
-
-```bash
-node /ABSOLUTE/PATH/TO/mockbase/backend/mcp-server.js
-```
-
-> Keep the backend (`npm start`) running too — the MCP server writes to the
-> database on its own, but it needs the Express server alive to push live
-> updates to the dashboard. (If the dashboard is offline, writes still persist;
-> they just won't stream until you reconnect.)
-
-### Generic MCP client config (Claude Desktop / Cursor / Poke local connector)
-
-Most stdio MCP clients use this JSON shape (e.g. Claude Desktop's
-`claude_desktop_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "mockbase": {
-      "command": "node",
-      "args": ["/ABSOLUTE/PATH/TO/mockbase/backend/mcp-server.js"],
-      "env": { "PORT": "4000" }
-    }
-  }
-}
-```
-
-### Connecting to Poke
-
-Poke is cloud-hosted, so it needs an **HTTPS MCP URL** — which `server.js` serves
-directly at `/mcp` (streamable HTTP). No stdio bridge, supergateway, or proxy.
-
-- **Local** — expose `:4000` with Poke's own tunnel (it registers the
-  integration for you):
-
-  ```bash
-  npx poke@latest login
-  npx poke@latest tunnel http://localhost:4000/mcp -n "MockBase"
-  ```
-
-- **Hosted** — point Poke straight at your deployed URL, no tunnel:
-
-  ```bash
-  npx poke@latest mcp add https://your-backend.example.com/mcp -n "MockBase"
-  ```
-
-Then text Poke, e.g. *"create a table `books` (title TEXT, author TEXT) and
-insert 3 rows"*, and watch the dashboard update live.
-
-### Quick test without a client — MCP Inspector
-
-```bash
-cd backend
-npx @modelcontextprotocol/inspector node mcp-server.js
-```
-
----
+Then text Poke: *"how much did I sell today?"*, *"show my last 5 orders"*,
+*"what products do I sell?"* — answers come back in iMessage, and each query
+lights up the dashboard.
 
 ## Deploy (always-on)
 
-For live demos without running anything locally, host the backend (one process:
-API + SSE + MCP) and the dashboard.
+Not serverless — the SSE stream needs a long-lived connection.
 
-**Backend → Railway / Render / Fly.io** (any long-running Node host with a disk):
+- **Backend** → Railway / Render / Fly (Dockerfile in `backend/`). Set
+  `SHOPIFY_STORES` as an environment variable in the host dashboard (never in the
+  repo).
+- **Frontend** → Vercel. Set `NEXT_PUBLIC_API_BASE` to the backend's URL.
+- Point Poke at `https://<backend-host>/mcp`.
 
-1. Point the service at `backend/` — a `Dockerfile` is included.
-2. Add a **persistent volume** and set `MOCKBASE_DB` to a path on it, e.g.
-   `MOCKBASE_DB=/data/mockbase.db`. `db.js` reads that env var, so the SQLite
-   file lives on the volume and survives restarts. The host injects `PORT`.
-3. Deploy. The backend now serves `/api/*`, `/api/events` (SSE), and `/mcp` at
-   `https://your-backend.example.com`.
+## Tests
 
-> **Not serverless.** Vercel/Netlify functions and Cloudflare Workers won't work
-> for the backend: SQLite needs a persistent disk and SSE needs a long-lived
-> connection. Use a long-running container/VM.
+```bash
+cd backend && node --test    # unit tests for the registry + Shopify helpers
+```
 
-**Frontend → Vercel** (or any static/Node host):
+## v1 limitations (intentional, not bugs)
 
-1. Set `NEXT_PUBLIC_API_BASE` to the backend URL (see `frontend/.env.example`).
-2. Deploy `frontend/`.
+- **Read-only.** No writes/mutations. The tool layer is structured so write tools
+  are a clean later addition; v1 requests only `read_orders`/`read_products`/`read_customers`.
+- **`get_sales`** reads a single 250-order page per store (a `capped` flag surfaces
+  overflow) and supports only `today`/`7d`/`30d` — custom date ranges are deferred.
+- **No sales sparkline** yet — `get_sales` returns the period total and order
+  count, not a per-day trend.
+- **`search_products`** is text search / listing only; true best-sellers ranking
+  by units sold (needs order/analytics aggregation) is deferred.
 
-**Poke →** `npx poke@latest mcp add https://your-backend.example.com/mcp -n "MockBase"` — no tunnel.
+## Project layout
 
----
-
-## MCP tools
-
-| Tool           | Arguments                                                                 | Behaviour                                                                                   |
-| -------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `create_table` | `name`, `columns: [{ name, type, primaryKey?, notNull? }]`               | Runs `CREATE TABLE` (auto-adds an `id` PK if none given). Allowed types: TEXT, INTEGER, INT, REAL, NUMERIC, BLOB, BOOLEAN, DATE, DATETIME. |
-| `get_schema`   | —                                                                          | All tables with columns, types, PKs, and row counts. Call before mutating.                 |
-| `insert_row`   | `table`, `values: { column: value }`                                      | Inserts one row (objects/booleans are coerced for SQLite).                                  |
-| `insert_rows`  | `table`, `rows: [{ column: value }, …]`                                   | Bulk insert (max 500) in one transaction — any bad row rolls back the batch.               |
-| `add_column`   | `table`, `column: { name, type }`                                         | `ALTER TABLE … ADD COLUMN` (nullable). Existing rows get NULL.                             |
-| `reset_playground` | `reseed?`                                                              | Drops **all** tables; optionally reseeds the default demo dataset.                         |
-| `update_row`   | `table`, `id`, `values: { column: value }`                                | Updates one row, addressed by primary key. Errors if no row matches.                       |
-| `delete_row`   | `table`, `id`                                                              | Deletes one row, addressed by primary key. Errors if no row matches.                       |
-| `drop_table`   | `name`                                                                     | Permanently drops the table and all its rows.                                              |
-| `query_data`   | `sql`                                                                      | Runs a **read-only** `SELECT` / `WITH … SELECT` and returns rows.                           |
-
-### Safety
-
-`query_data` is hardened against injection: it rejects multiple statements,
-anything that isn't a `SELECT`/`WITH`, any DDL/DML keyword
-(`INSERT/UPDATE/DELETE/DROP/ALTER/CREATE/REPLACE/TRUNCATE/ATTACH/PRAGMA/…`),
-and any prepared statement that isn't a pure reader. Table and column names are
-validated against a strict identifier pattern before they touch the database.
-
-### Example prompts for your MCP client
-
-- "Create a table `books` with columns title (TEXT), author (TEXT), year (INTEGER)."
-- "Insert a row into `books`: title 'Dune', author 'Frank Herbert', year 1965."
-- "Query the 5 most recent users."
-
-Each of these will appear in the dashboard's activity log and update the data
-grid in real time.
-
----
-
-## How real-time sync works
-
-1. An MCP tool call hits `mcp-server.js`, which validates input and writes to
-   `mockbase.db` via `better-sqlite3` (WAL mode, so the API and MCP processes
-   share the file safely).
-2. On success it `POST`s the event to the Express server's
-   `/internal/broadcast` endpoint.
-3. Express fans the event out to every connected browser over the
-   `/api/events` SSE stream.
-4. The `useMockbase` hook receives the event, appends it to the activity log,
-   and refetches the affected schema/rows — so the UI updates without a refresh.
-
----
-
-## Scripts reference
-
-**backend/**
-- `npm start` — Express API + SSE on `:4000`
-- `npm run dev` — same, with `--watch` reload
-- `npm run mcp` — start the MCP stdio server
-- `npm run seed` — seed/top-up mock data
-
-**frontend/**
-- `npm run dev` — Next.js dev server on `:3000`
-- `npm run build` / `npm start` — production build + serve
+```
+backend/
+  server.js      Express: REST + SSE + /mcp (streamable HTTP)
+  mcp-tools.js   the 6 read-only MCP tools (createMcpServer factory)
+  shopify.js     Admin GraphQL client + client-credentials token exchange + read fns
+  stores.js      multi-store registry (parses SHOPIFY_STORES)
+  smoke.js       read-only smoke test against the real store
+  test/          unit tests (node --test)
+frontend/
+  app/page.js            dashboard
+  components/            ResultPanel, ActivityLog, Header
+  lib/useShopTalk.js     SSE hook (activity, status, latest, stores)
+```
