@@ -1,29 +1,22 @@
-// mcp-tools.js — single source of truth for MockBase's MCP tools.
-//
-// Builds a configured McpServer exposing create_table / insert_row / query_data.
-// The `broadcast` callback is injected so the exact same tools work in two modes:
-//   - in-process  (server.js passes its SSE broadcast function directly)
-//   - stdio        (mcp-server.js passes notifyDashboard, an HTTP POST to the
-//                   running Express server's /internal/broadcast)
+// mcp-tools.js — single source of truth for ShopTalk's MCP tools.
+// Builds a configured McpServer exposing read-only Shopify queries.
+// The `broadcast` callback is injected so the same tools work in two modes:
+//   - in-process (server.js passes its SSE broadcast function)
+//   - stdio      (mcp-server.js passes notifyDashboard)
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
+import { listStoreSummaries } from "./stores.js";
 import {
-  createTable,
-  insertRow,
-  insertRows,
-  updateRow,
-  deleteRow,
-  dropTable,
-  addColumn,
-  resetDatabase,
-  getTables,
-  queryData,
-} from "./db.js";
-import { seedMockData } from "./seed.js";
+  getSales,
+  getSalesAllStores,
+  getOrders,
+  getOrder,
+  searchProducts,
+  searchCustomers,
+} from "./shopify.js";
 
-// Plain-text tool result helper for the MCP client.
 const text = (value) => ({
   content: [
     {
@@ -38,407 +31,205 @@ const errorText = (message) => ({
   isError: true,
 });
 
-/**
- * Build a fresh MockBase MCP server.
- *
- * @param {(event: object) => unknown | Promise<unknown>} broadcast
- *   Invoked after each successful mutation to announce it to the dashboard.
- *   Defaults to a no-op so the server is usable without a dashboard.
- */
+const money = (byCurrency) =>
+  Object.entries(byCurrency)
+    .map(([cur, amt]) => `${amt.toFixed(2)} ${cur}`)
+    .join(", ") || "0";
+
 export function createMcpServer(broadcast = () => {}) {
   const server = new McpServer(
-    { name: "mockbase", version: "1.0.0" },
+    { name: "shoptalk", version: "1.0.0" },
     {
       instructions:
-        "MockBase is a demo SQLite playground wired to a live dashboard. " +
-        "Call get_schema first to see the current tables and columns before " +
-        "querying or mutating — column names must match exactly. Prefer " +
-        "insert_rows when adding more than one row. update_row/delete_row " +
-        "address rows by primary key (use query_data to find ids). " +
-        "reset_playground wipes everything; use it when asked to start fresh.",
+        "ShopTalk gives read-only access to the owner's Shopify store(s) over a " +
+        "live dashboard. Call list_stores first if unsure which stores exist. " +
+        "Every tool takes an optional `store` key; omit it to use the default " +
+        "store (or, for get_sales, to roll up across all stores). All tools are " +
+        "read-only — there is no way to change store data.",
     }
   );
 
-  // -------------------------------------------------------------------------
-  // get_schema
-  // -------------------------------------------------------------------------
+  // list_stores -----------------------------------------------------------
   server.registerTool(
-    "get_schema",
+    "list_stores",
     {
-      title: "Get Schema",
-      description:
-        "List every table with its columns (name, type, not-null, primary " +
-        "key) and current row count. Call this before querying or mutating " +
-        "so column names match exactly.",
+      title: "List Stores",
+      description: "List the configured Shopify stores (key, label, domain).",
       inputSchema: {},
     },
     async () => {
       try {
-        // Read-only and expected to be called often — deliberately silent
-        // (no broadcast), so it never spams the dashboard's activity log.
-        return text({ tables: getTables() });
-      } catch (err) {
-        return errorText(err.message);
-      }
-    }
-  );
-
-  // -------------------------------------------------------------------------
-  // create_table
-  // -------------------------------------------------------------------------
-  server.registerTool(
-    "create_table",
-    {
-      title: "Create Table",
-      description:
-        "Create a new SQLite table. Provide a table name and an array of columns " +
-        "with types. An auto-incrementing integer `id` primary key is added " +
-        "automatically unless one of your columns is marked as the primary key.",
-      inputSchema: {
-        name: z
-          .string()
-          .describe("Table name (letters, numbers, underscores)."),
-        columns: z
-          .array(
-            z.object({
-              name: z.string().describe("Column name."),
-              type: z
-                .enum([
-                  "TEXT",
-                  "INTEGER",
-                  "INT",
-                  "REAL",
-                  "NUMERIC",
-                  "BLOB",
-                  "BOOLEAN",
-                  "DATE",
-                  "DATETIME",
-                ])
-                .describe("SQLite column type."),
-              primaryKey: z.boolean().optional(),
-              notNull: z.boolean().optional(),
-            })
-          )
-          .min(1)
-          .describe("Columns to create."),
-      },
-    },
-    async ({ name, columns }) => {
-      try {
-        const result = createTable(name, columns);
+        const stores = listStoreSummaries();
         await broadcast({
-          type: "table_created",
-          tool: "create_table",
-          table: name,
-          message: `Created table "${name}" (${columns.length} column${
-            columns.length === 1 ? "" : "s"
-          })`,
-          detail: result.sql,
+          type: "stores",
+          tool: "list_stores",
+          message: `Listed ${stores.length} store${stores.length === 1 ? "" : "s"}`,
+          detail: stores,
         });
-        return text(`Table "${name}" created.\n\nDDL:\n${result.sql}`);
+        return text({ stores });
       } catch (err) {
         return errorText(err.message);
       }
     }
   );
 
-  // -------------------------------------------------------------------------
-  // insert_row
-  // -------------------------------------------------------------------------
+  // get_sales -------------------------------------------------------------
   server.registerTool(
-    "insert_row",
+    "get_sales",
     {
-      title: "Insert Row",
+      title: "Get Sales",
       description:
-        "Insert a single row into an existing table. Pass the table name and a " +
-        "JSON object of column/value pairs.",
+        "Revenue, order count, and average order value for a period. Omit " +
+        "`store` to roll up across all stores.",
       inputSchema: {
-        table: z.string().describe("Target table name."),
-        values: z
-          .record(z.string(), z.any())
-          .describe("Object of { column: value } pairs to insert."),
-      },
-    },
-    async ({ table, values }) => {
-      try {
-        const result = insertRow(table, values);
-        await broadcast({
-          type: "row_inserted",
-          tool: "insert_row",
-          table,
-          message: `Inserted row into "${table}" (id ${result.rowid})`,
-          detail: result.values,
-        });
-        return text(`Inserted into "${table}". New rowid: ${result.rowid}.`);
-      } catch (err) {
-        return errorText(err.message);
-      }
-    }
-  );
-
-  // -------------------------------------------------------------------------
-  // insert_rows
-  // -------------------------------------------------------------------------
-  server.registerTool(
-    "insert_rows",
-    {
-      title: "Insert Rows (bulk)",
-      description:
-        "Insert multiple rows into an existing table in one transaction — " +
-        "if any row is invalid, the whole batch is rolled back. Max 500 rows " +
-        "per call. Prefer this over insert_row when adding more than one row.",
-      inputSchema: {
-        table: z.string().describe("Target table name."),
-        rows: z
-          .array(z.record(z.string(), z.any()))
-          .min(1)
-          .max(500)
-          .describe("Array of { column: value } objects, one per row."),
-      },
-    },
-    async ({ table, rows }) => {
-      try {
-        const result = insertRows(table, rows);
-        await broadcast({
-          type: "row_inserted",
-          tool: "insert_rows",
-          table,
-          message: `Inserted ${result.count} rows into "${table}"`,
-          detail: { count: result.count, lastRowid: result.lastRowid },
-        });
-        return text(
-          `Inserted ${result.count} rows into "${table}" (rowids ${result.firstRowid}–${result.lastRowid}).`
-        );
-      } catch (err) {
-        return errorText(err.message);
-      }
-    }
-  );
-
-  // -------------------------------------------------------------------------
-  // update_row
-  // -------------------------------------------------------------------------
-  server.registerTool(
-    "update_row",
-    {
-      title: "Update Row",
-      description:
-        "Update a single row in an existing table, addressed by its primary " +
-        "key. Pass the table name, the row's primary-key value, and a JSON " +
-        "object of column/value pairs to change. Use query_data first to find " +
-        "the row's id.",
-      inputSchema: {
-        table: z.string().describe("Target table name."),
-        id: z
-          .union([z.number(), z.string()])
-          .describe("Primary-key value of the row to update."),
-        values: z
-          .record(z.string(), z.any())
-          .describe("Object of { column: value } pairs to change."),
-      },
-    },
-    async ({ table, id, values }) => {
-      try {
-        const result = updateRow(table, id, values);
-        await broadcast({
-          type: "row_updated",
-          tool: "update_row",
-          table,
-          message: `Updated row ${result.pk}=${id} in "${table}"`,
-          detail: result.values,
-        });
-        return text(
-          `Updated row in "${table}" where ${result.pk} = ${id}.`
-        );
-      } catch (err) {
-        return errorText(err.message);
-      }
-    }
-  );
-
-  // -------------------------------------------------------------------------
-  // delete_row
-  // -------------------------------------------------------------------------
-  server.registerTool(
-    "delete_row",
-    {
-      title: "Delete Row",
-      description:
-        "Delete a single row from an existing table, addressed by its primary " +
-        "key. Use query_data first to find the row's id.",
-      inputSchema: {
-        table: z.string().describe("Target table name."),
-        id: z
-          .union([z.number(), z.string()])
-          .describe("Primary-key value of the row to delete."),
-      },
-    },
-    async ({ table, id }) => {
-      try {
-        const result = deleteRow(table, id);
-        await broadcast({
-          type: "row_deleted",
-          tool: "delete_row",
-          table,
-          message: `Deleted row ${result.pk}=${id} from "${table}"`,
-        });
-        return text(
-          `Deleted row from "${table}" where ${result.pk} = ${id}.`
-        );
-      } catch (err) {
-        return errorText(err.message);
-      }
-    }
-  );
-
-  // -------------------------------------------------------------------------
-  // drop_table
-  // -------------------------------------------------------------------------
-  server.registerTool(
-    "drop_table",
-    {
-      title: "Drop Table",
-      description:
-        "Permanently delete an entire table and all of its rows. This cannot " +
-        "be undone.",
-      inputSchema: {
-        name: z.string().describe("Name of the table to drop."),
-      },
-    },
-    async ({ name }) => {
-      try {
-        dropTable(name);
-        await broadcast({
-          type: "table_dropped",
-          tool: "drop_table",
-          table: name,
-          message: `Dropped table "${name}"`,
-        });
-        return text(`Table "${name}" dropped.`);
-      } catch (err) {
-        return errorText(err.message);
-      }
-    }
-  );
-
-  // -------------------------------------------------------------------------
-  // add_column
-  // -------------------------------------------------------------------------
-  server.registerTool(
-    "add_column",
-    {
-      title: "Add Column",
-      description:
-        "Add a new (nullable) column to an existing table without losing " +
-        "data. Existing rows get NULL for the new column.",
-      inputSchema: {
-        table: z.string().describe("Target table name."),
-        column: z
-          .object({
-            name: z.string().describe("New column name."),
-            type: z
-              .enum([
-                "TEXT",
-                "INTEGER",
-                "INT",
-                "REAL",
-                "NUMERIC",
-                "BLOB",
-                "BOOLEAN",
-                "DATE",
-                "DATETIME",
-              ])
-              .describe("SQLite column type."),
-          })
-          .describe("Column to add."),
-      },
-    },
-    async ({ table, column }) => {
-      try {
-        const result = addColumn(table, column);
-        await broadcast({
-          type: "column_added",
-          tool: "add_column",
-          table,
-          message: `Added column "${result.column}" (${result.type}) to "${table}"`,
-          detail: result.sql,
-        });
-        return text(
-          `Added column "${result.column}" (${result.type}) to "${table}".`
-        );
-      } catch (err) {
-        return errorText(err.message);
-      }
-    }
-  );
-
-  // -------------------------------------------------------------------------
-  // reset_playground
-  // -------------------------------------------------------------------------
-  server.registerTool(
-    "reset_playground",
-    {
-      title: "Reset Playground",
-      description:
-        "Drop ALL tables and start fresh. Pass reseed=true to restore the " +
-        "default demo dataset (users, products) afterwards. This cannot be " +
-        "undone.",
-      inputSchema: {
-        reseed: z
-          .boolean()
+        store: z.string().optional().describe("Store key. Omit to roll up all stores."),
+        period: z
+          .enum(["today", "7d", "30d"])
           .optional()
-          .describe("Re-create the default demo dataset after wiping."),
+          .describe("Time window (default today)."),
       },
     },
-    async ({ reseed }) => {
+    async ({ store, period = "today" }) => {
       try {
-        const { dropped } = resetDatabase();
-        let summary = `Playground reset — dropped ${dropped.length} table${
-          dropped.length === 1 ? "" : "s"
-        }`;
-        if (reseed) {
-          seedMockData();
-          summary += ", reseeded default dataset";
+        if (store) {
+          const r = await getSales(store, period);
+          const msg =
+            `${r.store} — ${r.label}: ${r.orderCount} orders, ` +
+            `${money(r.totalsByCurrency)}` +
+            (r.capped ? " (capped at 250 orders)" : "");
+          await broadcast({
+            type: "sales",
+            tool: "get_sales",
+            store: r.store,
+            message: msg,
+            detail: r,
+          });
+          return text(r);
         }
+        const r = await getSalesAllStores(period);
+        const msg = `All stores — ${r.perStore[0]?.label ?? period}: ${r.combined.orderCount} orders, ${money(r.combined.byCurrency)}`;
         await broadcast({
-          type: "reset",
-          tool: "reset_playground",
-          message: summary,
-          detail: { dropped, reseeded: !!reseed },
+          type: "sales",
+          tool: "get_sales",
+          message: msg,
+          detail: r,
         });
-        return text(`${summary}.`);
+        return text(r);
       } catch (err) {
         return errorText(err.message);
       }
     }
   );
 
-  // -------------------------------------------------------------------------
-  // query_data
-  // -------------------------------------------------------------------------
+  // get_orders ------------------------------------------------------------
   server.registerTool(
-    "query_data",
+    "get_orders",
     {
-      title: "Query Data",
-      description:
-        "Run a read-only SQL SELECT (or WITH ... SELECT) query and return the " +
-        "rows. Write and DDL statements are rejected.",
+      title: "Get Orders",
+      description: "List recent orders, optionally only unfulfilled ones.",
       inputSchema: {
-        sql: z.string().describe("A single read-only SELECT statement."),
+        store: z.string().optional().describe("Store key (default store if omitted)."),
+        status: z.enum(["unfulfilled"]).optional().describe("Filter by status."),
+        limit: z.number().int().min(1).max(50).optional().describe("Max orders (default 10)."),
       },
     },
-    async ({ sql }) => {
+    async ({ store, status, limit }) => {
       try {
-        const { rows, sql: cleanSql } = queryData(sql);
+        const r = await getOrders(store, { status, limit });
         await broadcast({
-          type: "query",
-          tool: "query_data",
-          message: `Query returned ${rows.length} row${
-            rows.length === 1 ? "" : "s"
-          }`,
-          detail: cleanSql,
+          type: "orders",
+          tool: "get_orders",
+          store: r.store,
+          message: `${r.store} — ${r.orders.length} ${status ?? "recent"} order${r.orders.length === 1 ? "" : "s"}`,
+          detail: r.orders,
         });
-        return text({ rowCount: rows.length, rows });
+        return text(r);
+      } catch (err) {
+        return errorText(err.message);
+      }
+    }
+  );
+
+  // get_order -------------------------------------------------------------
+  server.registerTool(
+    "get_order",
+    {
+      title: "Get Order",
+      description: "Full detail for one order by its number (e.g. #1001).",
+      inputSchema: {
+        store: z.string().optional().describe("Store key (default store if omitted)."),
+        name: z.string().describe("Order number, with or without # (e.g. 1001 or #1001)."),
+      },
+    },
+    async ({ store, name }) => {
+      try {
+        const r = await getOrder(store, name);
+        await broadcast({
+          type: "order",
+          tool: "get_order",
+          store: r.store,
+          message: r.order ? `${r.store} — order ${r.order.name}` : `${r.store} — order ${name} not found`,
+          detail: r.order,
+        });
+        return text(r);
+      } catch (err) {
+        return errorText(err.message);
+      }
+    }
+  );
+
+  // search_products -------------------------------------------------------
+  server.registerTool(
+    "search_products",
+    {
+      title: "Search Products",
+      description: "Search products by title/SKU; lists products by title when no query is given.",
+      inputSchema: {
+        store: z.string().optional().describe("Store key (default store if omitted)."),
+        query: z.string().optional().describe("Search text (title, sku, etc.)."),
+        limit: z.number().int().min(1).max(50).optional().describe("Max products (default 10)."),
+      },
+    },
+    async ({ store, query, limit }) => {
+      try {
+        const r = await searchProducts(store, { query, limit });
+        await broadcast({
+          type: "products",
+          tool: "search_products",
+          store: r.store,
+          message: `${r.store} — ${r.products.length} product${r.products.length === 1 ? "" : "s"}`,
+          detail: r.products,
+        });
+        return text(r);
+      } catch (err) {
+        return errorText(err.message);
+      }
+    }
+  );
+
+  // search_customers ------------------------------------------------------
+  server.registerTool(
+    "search_customers",
+    {
+      title: "Search Customers",
+      description: 'Search customers. Pass query "orders_count:>1" for repeat customers.',
+      inputSchema: {
+        store: z.string().optional().describe("Store key (default store if omitted)."),
+        query: z.string().optional().describe("Search text or filter (e.g. orders_count:>1)."),
+        limit: z.number().int().min(1).max(50).optional().describe("Max customers (default 10)."),
+      },
+    },
+    async ({ store, query, limit }) => {
+      try {
+        const r = await searchCustomers(store, { query, limit });
+        await broadcast({
+          type: "customers",
+          tool: "search_customers",
+          store: r.store,
+          message: `${r.store} — ${r.customers.length} customer${r.customers.length === 1 ? "" : "s"}`,
+          detail: r.customers,
+        });
+        return text(r);
       } catch (err) {
         return errorText(err.message);
       }
