@@ -59,6 +59,16 @@ test("aggregateSales sums counts and groups totals by currency", () => {
   assert.deepEqual(result.byCurrency, { USD: 150, EUR: 20 });
 });
 
+test("aggregateSales propagates the capped flag and lists capped stores", () => {
+  const r = aggregateSales([
+    { store: "main", orderCount: 250, totalsByCurrency: { USD: 25000 }, capped: true },
+    { store: "eu", orderCount: 50, totalsByCurrency: { USD: 5000 }, capped: false },
+  ]);
+  assert.equal(r.capped, true);
+  assert.deepEqual(r.cappedStores, ["main"]);
+  assert.equal(r.orderCount, 300);
+});
+
 test("shapeProduct flattens a GraphQL product node and coerces price to Number", () => {
   const node = {
     title: "Cool Shirt",

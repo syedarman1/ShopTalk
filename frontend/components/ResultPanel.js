@@ -31,7 +31,7 @@ function Sales({ detail }) {
           {detail.perStore.map((s) => (
             <li key={s.store} className="flex justify-between border-t border-border/50 py-1">
               <span>{s.store}</span>
-              <span className="font-mono">{fmtMoney(s.totalsByCurrency)} · {s.orderCount}</span>
+              <span className="font-mono">{fmtMoney(s.totalsByCurrency)} · {s.orderCount}{s.capped ? " (capped)" : ""}</span>
             </li>
           ))}
         </ul>

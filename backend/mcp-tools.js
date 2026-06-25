@@ -107,7 +107,10 @@ export function createMcpServer(broadcast = () => {}) {
           return text(r);
         }
         const r = await getSalesAllStores(period);
-        const msg = `All stores — ${r.perStore[0]?.label ?? period}: ${r.combined.orderCount} orders, ${money(r.combined.byCurrency)}`;
+        const cappedNote = r.combined.capped
+          ? ` (capped at 250 orders in: ${r.combined.cappedStores.join(", ")})`
+          : "";
+        const msg = `All stores — ${r.perStore[0]?.label ?? period}: ${r.combined.orderCount} orders, ${money(r.combined.byCurrency)}${cappedNote}`;
         await broadcast({
           type: "sales",
           tool: "get_sales",

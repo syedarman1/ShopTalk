@@ -75,17 +75,19 @@ export function shapeCustomer(node) {
   };
 }
 
-/** Sum order counts and group revenue totals by currency across stores. */
+/** Sum order counts and group revenue by currency across stores; track capped stores. */
 export function aggregateSales(perStore) {
   const byCurrency = {};
   let orderCount = 0;
+  const cappedStores = [];
   for (const s of perStore) {
     orderCount += s.orderCount;
+    if (s.capped) cappedStores.push(s.store);
     for (const [cur, amt] of Object.entries(s.totalsByCurrency)) {
       byCurrency[cur] = (byCurrency[cur] || 0) + amt;
     }
   }
-  return { byCurrency, orderCount };
+  return { byCurrency, orderCount, capped: cappedStores.length > 0, cappedStores };
 }
 
 // ---------- Network client ----------
