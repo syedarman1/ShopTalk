@@ -134,7 +134,22 @@ function forceAccept(req) {
   }
 }
 
+// Optional shared-secret auth for /mcp. When MCP_TOKEN is set, every /mcp request
+// must present it (Bearer, X-API-Key, or X-ShopTalk-Token — covers how MCP clients
+// like Poke's `mcp add -k` send a key). When unset, /mcp is open (dev only).
+function mcpAuthorized(req) {
+  const expected = process.env.MCP_TOKEN;
+  if (!expected) return true;
+  const auth = req.get("authorization") || "";
+  const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+  const provided = bearer || req.get("x-api-key") || req.get("x-shoptalk-token");
+  return provided === expected;
+}
+
 async function handleMcp(req, res) {
+  if (!mcpAuthorized(req)) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
   // The streamable-HTTP transport requires both types in Accept; force it so
   // clients that send */* or application/json alone aren't rejected with 406.
   forceAccept(req);
@@ -164,4 +179,7 @@ app.listen(PORT, () => {
   console.log(`[shoptalk]   GET  /api/stores`);
   console.log(`[shoptalk]   GET  /api/events   (SSE)`);
   console.log(`[shoptalk]   ALL  /mcp          (MCP streamable HTTP)`);
+  if (!process.env.MCP_TOKEN) {
+    console.warn("[shoptalk] WARNING: MCP_TOKEN not set — /mcp is unauthenticated. Set it before exposing the backend publicly.");
+  }
 });
