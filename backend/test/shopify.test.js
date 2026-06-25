@@ -18,6 +18,18 @@ test("periodToRange rejects unknown period", () => {
   assert.throws(() => periodToRange("forever", new Date()), /period/i);
 });
 
+test("periodToRange('today') honors a non-UTC timezone", () => {
+  // 2026-06-25T04:00Z is midnight EDT (UTC-4) -> local 'today' starts at 04:00Z
+  const now = new Date("2026-06-25T04:00:00Z");
+  const { since } = periodToRange("today", now, "America/New_York");
+  assert.equal(since, "2026-06-25T04:00:00.000Z");
+});
+
+test("periodToRange defaults to UTC when no timezone given", () => {
+  const now = new Date("2026-06-20T15:30:00Z");
+  assert.equal(periodToRange("today", now).since, "2026-06-20T00:00:00.000Z");
+});
+
 test("shapeOrder flattens a GraphQL order node", () => {
   const node = {
     name: "#1001",

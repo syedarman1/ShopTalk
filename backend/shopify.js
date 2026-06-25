@@ -6,20 +6,35 @@ import { resolveStore, getStores } from "./stores.js";
 
 // ---------- Pure helpers (network-free) ----------
 
-/** Map a named period to an ISO `since` timestamp relative to `now`. */
-export function periodToRange(period, now) {
-  const midnight = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
-  );
-  if (period === "today") {
-    return { since: midnight.toISOString(), label: "today" };
-  }
+// UTC ISO string for the start of `now`'s calendar day in the given IANA time zone.
+function startOfDayISO(now, timeZone) {
+  const ymd = new Intl.DateTimeFormat("en-CA", {
+    timeZone, year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(now); // e.g. "2026-06-25"
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone, hour12: false,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+  const p = {};
+  for (const part of dtf.formatToParts(now)) p[part.type] = part.value;
+  const hour = p.hour === "24" ? "00" : p.hour;
+  const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, +hour, +p.minute, +p.second);
+  const offsetMs = asUTC - now.getTime(); // time-zone offset at `now`
+  const localMidnightAsUTC = new Date(`${ymd}T00:00:00.000Z`).getTime();
+  return new Date(localMidnightAsUTC - offsetMs).toISOString();
+}
+
+/** Map a named period to an ISO `since` timestamp relative to `now`, in `timeZone`. */
+export function periodToRange(period, now, timeZone = "UTC") {
+  const startToday = startOfDayISO(now, timeZone);
+  if (period === "today") return { since: startToday, label: "today" };
   const days = { "7d": 7, "30d": 30 }[period];
   if (!days) {
     throw new Error(`Unknown period "${period}". Use today, 7d, or 30d.`);
   }
-  const since = new Date(midnight.getTime() - days * 24 * 60 * 60 * 1000);
-  return { since: since.toISOString(), label: `last ${days} days` };
+  const since = new Date(Date.parse(startToday) - days * 24 * 60 * 60 * 1000).toISOString();
+  return { since, label: `last ${days} days` };
 }
 
 /** Flatten a GraphQL order node into a clean object. */
@@ -82,6 +97,22 @@ const SALES_PAGE = 250; // Admin API max per page; v1 reads one page.
 // Shopify removed static admin tokens in 2026; exchange the app's
 // clientId/clientSecret for a ~24h token and cache it per store in-process.
 const tokenCache = new Map(); // store.key -> { token, expiresAt (ms epoch) }
+
+const tzCache = new Map(); // store.key -> IANA timezone string
+
+/** Fetch & cache the shop's IANA timezone; defaults to "UTC" on any failure. */
+export async function getShopTimezone(store) {
+  if (tzCache.has(store.key)) return tzCache.get(store.key);
+  let tz = "UTC";
+  try {
+    const data = await shopifyGraphQL(store, `{ shop { ianaTimezone } }`);
+    tz = data?.shop?.ianaTimezone || "UTC";
+  } catch {
+    tz = "UTC";
+  }
+  tzCache.set(store.key, tz);
+  return tz;
+}
 
 /** Get a valid Admin API access token for the store, exchanging/refreshing as needed. */
 export async function getAccessToken(store) {
@@ -168,7 +199,8 @@ const ORDER_FIELDS = `
 /** Sales for one store over a period (single page of up to 250 orders). */
 export async function getSales(storeKey, period = "today") {
   const store = resolveStore(storeKey);
-  const { since, label } = periodToRange(period, new Date());
+  const timeZone = await getShopTimezone(store);
+  const { since, label } = periodToRange(period, new Date(), timeZone);
   const query = `
     query($q: String!) {
       orders(first: ${SALES_PAGE}, query: $q, sortKey: CREATED_AT, reverse: true) {
