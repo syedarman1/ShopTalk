@@ -48,6 +48,10 @@ function broadcast(event) {
 }
 
 app.get("/api/events", (req, res) => {
+  // The SSE stream carries tool results (incl. customer data), so gate it like
+  // /mcp. Browsers can't set headers on EventSource, so the dashboard passes the
+  // token as ?token=... When MCP_TOKEN is unset this is open (dev only).
+  if (!mcpAuthorized(req)) return res.status(401).json({ error: "unauthorized" });
   res.set({
     "Content-Type": "text/event-stream",
     "Cache-Control": "no-cache, no-transform",
@@ -142,7 +146,7 @@ function mcpAuthorized(req) {
   if (!expected) return true;
   const auth = req.get("authorization") || "";
   const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : null;
-  const provided = bearer || req.get("x-api-key") || req.get("x-shoptalk-token");
+  const provided = bearer || req.get("x-api-key") || req.get("x-shoptalk-token") || req.query.token;
   return provided === expected;
 }
 

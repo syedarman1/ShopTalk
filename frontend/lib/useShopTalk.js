@@ -26,7 +26,11 @@ export function useShopTalk() {
   const connect = useCallback(() => {
     lastSeen.current = Date.now();
     sourceRef.current?.close();
-    const source = new EventSource(`${API_BASE}/api/events`);
+    const token = process.env.NEXT_PUBLIC_DASHBOARD_TOKEN;
+    const url = token
+      ? `${API_BASE}/api/events?token=${encodeURIComponent(token)}`
+      : `${API_BASE}/api/events`;
+    const source = new EventSource(url);
     sourceRef.current = source;
 
     source.onopen = () => {
