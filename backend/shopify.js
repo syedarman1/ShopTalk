@@ -156,6 +156,7 @@ export async function shopifyGraphQL(store, query, variables = {}) {
   const url = `https://${store.shopDomain}/admin/api/${store.apiVersion}/graphql.json`;
   const body = JSON.stringify({ query, variables });
 
+  let authRetried = false;
   for (let attempt = 0; attempt < 3; attempt++) {
     const token = await getAccessToken(store);
     const res = await fetch(url, {
@@ -173,7 +174,7 @@ export async function shopifyGraphQL(store, query, variables = {}) {
     }
     if (res.status === 401 || res.status === 403) {
       tokenCache.delete(store.key);
-      if (attempt === 0) continue;
+      if (!authRetried) { authRetried = true; continue; }
       throw new Error(
         `Authentication failed for store "${store.key}" (HTTP ${res.status}). ` +
           "Check the app's scopes and that it is installed on the store."
