@@ -204,10 +204,9 @@ export async function getSales(storeKey, period = "today") {
 
 /** Sales rolled up across every configured store. */
 export async function getSalesAllStores(period = "today") {
-  const perStore = [];
-  for (const store of getStores()) {
-    perStore.push(await getSales(store.key, period));
-  }
+  const perStore = await Promise.all(
+    getStores().map((store) => getSales(store.key, period))
+  );
   const combined = aggregateSales(perStore);
   return { perStore, combined };
 }

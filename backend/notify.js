@@ -5,7 +5,7 @@
 // just swallow the connection error.
 
 const BROADCAST_URL =
-  process.env.MOCKBASE_BROADCAST_URL ||
+  process.env.SHOPTALK_BROADCAST_URL ||
   `http://localhost:${process.env.PORT || 4000}/internal/broadcast`;
 
 export async function notifyDashboard(event) {

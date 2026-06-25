@@ -13,7 +13,7 @@ import { createMcpServer } from "./mcp-tools.js";
 const PORT = process.env.PORT || 4000;
 const app = express();
 
-app.use(cors());
+app.use(cors({ origin: process.env.CORS_ORIGIN || "http://localhost:3000" }));
 app.use(express.json());
 
 // Tolerate clients/tunnels that prefix the path with a per-session UUID
@@ -100,6 +100,10 @@ app.get("/api/stores", (_req, res) => {
 // Internal hook the MCP process calls after a successful tool run. Not meant
 // for browsers — it simply fans the event out to all SSE clients.
 app.post("/internal/broadcast", (req, res) => {
+  const ip = req.socket.remoteAddress || "";
+  if (!["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(ip)) {
+    return res.status(403).json({ error: "forbidden" });
+  }
   const event = req.body || {};
   const payload = broadcast(event);
   res.json({ ok: true, delivered: clients.size, payload });

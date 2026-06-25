@@ -72,7 +72,7 @@ Create `backend/.env` (gitignored — never commit it):
 PORT=4000
 # Single-quote the whole value so Node's --env-file parser keeps it intact
 # (an unquoted '#' is treated as a comment and would truncate the JSON).
-SHOPIFY_STORES='[{"key":"main","label":"Main Store","shopDomain":"your-store.myshopify.com","clientId":"your_api_key","clientSecret":"shpss_xxx","apiVersion":"2026-04"}]'
+SHOPIFY_STORES='[{"key":"main","label":"Main Store","shopDomain":"your-store.myshopify.com","clientId":"your_api_key","clientSecret":"shpss_xxx","apiVersion":"2026-01"}]'
 ```
 
 `SHOPIFY_STORES` is a JSON array — add more `{…}` objects for more stores. Each
@@ -115,7 +115,9 @@ Not serverless — the SSE stream needs a long-lived connection.
 
 - **Backend** → Railway / Render / Fly (Dockerfile in `backend/`). Set
   `SHOPIFY_STORES` as an environment variable in the host dashboard (never in the
-  repo).
+  repo). Also set `CORS_ORIGIN` to your deployed frontend's URL (e.g.
+  `https://your-dashboard.vercel.app`) so the CORS policy allows the browser to
+  reach the backend API and SSE stream.
 - **Frontend** → Vercel. Set `NEXT_PUBLIC_API_BASE` to the backend's URL.
 - Point Poke at `https://<backend-host>/mcp`.
 
