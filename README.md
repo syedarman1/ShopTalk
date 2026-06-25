@@ -1,155 +1,171 @@
-# ShopTalk — Text Poke to ask your Shopify store anything
+# ShopTalk
 
-ShopTalk is an [MCP](https://modelcontextprotocol.io) server that lets you text
-[Poke](https://poke.com) over iMessage to ask read-only questions about your
-Shopify store(s) — "how much did I sell today?", "show my last 5 orders",
-"who are my repeat customers?" — and get real answers back. A live web dashboard
-streams every query as it happens.
+**Text your Shopify store a question in plain English and get a real answer back — over iMessage.**
 
-It's a fork of the MockBase architecture: the same one-process Express + SSE +
-MCP backbone and Next.js dashboard, with the data layer swapped from SQLite to
-the **Shopify Admin GraphQL API**.
+> *"How much did I sell today?"* → *"$1,240 across 18 orders today."*
+> *"Show my last 5 orders."* → a tidy list of order numbers, customers, and totals.
 
-## How it works
+ShopTalk is a small backend that connects an AI texting assistant to a Shopify
+store, so a busy shop owner can check on their business by sending a text — no
+dashboard, no login, no SQL. It's purpose-built for **Shopify entrepreneurs**:
+the people who live in their store's numbers but don't want to open the admin
+panel ten times a day.
 
-```
-iMessage ──> Poke ──(MCP over streamable HTTP)──> ShopTalk /mcp
-                                                     │
-                                       reads (read-only) via
-                                       Shopify Admin GraphQL API
-                                                     │
-                              every tool call broadcasts over SSE
-                                                     ▼
-                                        Next.js live dashboard
-```
+---
 
-One Express process serves three things in-process:
+## Who this is for
 
-1. **`/mcp`** — the MCP server (stateless streamable HTTP) that Poke connects to.
-2. **`/api/events`** — an SSE stream the dashboard subscribes to; every tool call
-   is broadcast here in real time.
-3. REST helpers (`/api/health`, `/api/stores`) for the dashboard.
+Solo founders and small teams running a Shopify store who want to *ask* their
+store things the way they'd text a co-founder — "what's selling?", "any orders I
+haven't shipped?", "who are my repeat customers?" — and get an answer in seconds,
+from their phone, without opening anything.
 
-### MCP tools (all read-only)
+It is intentionally **read-only and focused**. It's not a general analytics
+suite; it answers the handful of questions a merchant actually texts about.
 
-| Tool | What it answers |
-|------|-----------------|
-| `list_stores` | Which stores are configured. |
-| `get_sales` | Revenue, order count, AOV for `today`/`7d`/`30d`. Per store or rolled up across all stores. |
-| `get_orders` | Recent orders, optionally only unfulfilled. |
-| `get_order` | Full detail for one order by number (e.g. `#1001`). |
-| `search_products` | Product search / listing. |
-| `search_customers` | Customer search (e.g. `orders_count:>1` for repeat customers). |
+---
 
-Every tool takes an optional `store` key; omit it to use the default store (or,
-for `get_sales`, to roll up across all stores). There is **no** way to change
-store data — the token only ever holds read scopes.
+## First, two terms (in case they're new)
 
-## Setup
+**What's "Poke"?** [Poke](https://poke.com) is an AI assistant you talk to over
+iMessage/SMS — like texting a smart helper. On its own it can chat, but it can
+also be connected to *external tools* so it can do real things (read your email,
+check a calendar… or, here, look up your Shopify store).
 
-### 1. Create a Shopify app and get credentials
+**What's "MCP"?** The [Model Context Protocol](https://modelcontextprotocol.io)
+is an open standard (think "USB-C for AI assistants") that lets an AI connect to
+an outside tool or data source in a consistent way. A program that speaks MCP
+exposes a set of **tools** the AI can call. **ShopTalk is an MCP server** — it
+exposes six read-only tools backed by the Shopify Admin API. Poke is the MCP
+*client* that calls them when you text a question.
 
-Shopify removed static admin API tokens in 2026, so ShopTalk uses the
-**client credentials grant** (the supported method for an app you own running on
-a store you own).
-
-1. Create an app in the Shopify **[Dev Dashboard](https://dev.shopify.com)** under
-   your organization.
-2. Set Admin API scopes on the app version: `read_orders`, `read_products`,
-   `read_customers`. **Release** that version (client credentials reads scopes
-   from the active released version — saving alone isn't enough).
-3. Install the app on your store, then copy its **Client ID** (API key) and
-   **Client Secret** (`shpss_…`). There is no static token — ShopTalk exchanges
-   these for a short-lived (24h) access token automatically and refreshes it.
-4. Find your store's permanent **`*.myshopify.com`** domain (Settings → Domains,
-   or your admin URL). This is *not* your custom storefront domain.
-
-### 2. Configure the backend
-
-Create `backend/.env` (gitignored — never commit it):
+So the flow is:
 
 ```
-PORT=4000
-# Single-quote the whole value so Node's --env-file parser keeps it intact
-# (an unquoted '#' is treated as a comment and would truncate the JSON).
-SHOPIFY_STORES='[{"key":"main","label":"Main Store","shopDomain":"your-store.myshopify.com","clientId":"your_api_key","clientSecret":"shpss_xxx","apiVersion":"2026-01"}]'
+You (iMessage)  ──>  Poke (AI assistant)  ──MCP──>  ShopTalk  ──>  Shopify Admin API
+                                                       │
+                                          live dashboard (SSE) shows each query
 ```
 
-`SHOPIFY_STORES` is a JSON array — add more `{…}` objects for more stores. Each
-store needs `key`, `label`, `shopDomain`, `clientId`, `clientSecret`; `apiVersion`
-is optional (defaults to a recent stable version).
+You text Poke → Poke decides which ShopTalk tool answers your question → ShopTalk
+queries Shopify and returns the data → Poke replies in plain English.
 
-### 3. Run it locally
+---
 
-```bash
-# backend
-cd backend && npm install && node --env-file=.env server.js   # http://localhost:4000
+## What you can ask (the six tools)
 
-# frontend (separate terminal)
-cd frontend && npm install && npm run dev                      # http://localhost:3000
-```
+| Tool | The question it answers |
+|------|--------------------------|
+| `list_stores` | "Which stores are connected?" |
+| `get_sales` | "How much did I sell today / this week / this month?" (revenue, orders, average order value — per store or all stores combined) |
+| `get_orders` | "Show my recent orders" / "anything unfulfilled?" |
+| `get_order` | "What's in order #1042?" |
+| `search_products` | "Find my hoodie" / "what do I sell?" |
+| `search_customers` | "Who are my repeat customers?" |
 
-Open the dashboard at http://localhost:3000 — the header should show **live** and
-your store count. Run the read-only smoke test against your real store any time:
+Every tool is **read-only** — ShopTalk cannot change, create, or delete anything
+in the store. That's enforced by the API permissions it requests, so a misread
+text can never modify your data.
 
-```bash
-cd backend && node --env-file=.env smoke.js
-```
+---
 
-### 4. Connect Poke
+## For the technically curious (and recruiters 👋)
 
-```bash
-npx poke@latest login
-npx poke@latest tunnel http://localhost:4000/mcp -n ShopTalk     # local
-# or, when deployed:
-npx poke@latest mcp add https://<your-host>/mcp -n ShopTalk
-```
+ShopTalk is a compact but production-shaped full-stack project. Highlights:
 
-Then text Poke: *"how much did I sell today?"*, *"show my last 5 orders"*,
-*"what products do I sell?"* — answers come back in iMessage, and each query
-lights up the dashboard.
+- **MCP server over streamable HTTP** — implements the Model Context Protocol so
+  any MCP client (Poke, Claude, etc.) can use it. Stateless transport: a fresh
+  server instance per request, no session state to leak or grow.
+- **Modern Shopify auth** — Shopify removed static API tokens in 2026, so
+  ShopTalk uses the **OAuth client-credentials grant**: it exchanges an app's
+  Client ID/Secret for a short-lived (24 h) access token, **caches it in
+  memory per store, and auto-refreshes** before expiry and on a 401.
+- **Real-time dashboard** — a Next.js app subscribes to a **Server-Sent Events**
+  stream; every tool call the AI makes lights up the UI live (which store, what
+  was asked, the result).
+- **Multi-store from day one** — a config-driven registry; queries run per store
+  or roll up across all stores, grouping revenue by currency (never summing
+  across mismatched currencies).
+- **Correctness details that matter** — sales windows are computed in the
+  *store's own timezone* (so "today" means the merchant's today, not UTC); large
+  result sets surface a "capped" flag instead of silently undercounting.
+- **Security-conscious** — read-only scopes only; the `/mcp` endpoint is gated by
+  a shared secret; `/internal/broadcast` is localhost-only; CORS is restricted;
+  credentials live only in environment variables, never in the repo.
+- **Tested & reviewed** — unit tests (Node's built-in runner) for the data layer,
+  plus the project was put through multi-agent code review (a local pass and a
+  cloud "ultrareview") whose findings — auth hardening, timezone correctness,
+  rollup accuracy, a retry bug — were all fixed and re-reviewed.
 
-## Deploy (always-on)
+**Stack:** Node 22 · Express · `@modelcontextprotocol/sdk` · Zod · Shopify Admin
+GraphQL · Next.js 14 / React 18 · Tailwind · deployed on Railway.
 
-Not serverless — the SSE stream needs a long-lived connection.
-
-- **Backend** → Railway / Render / Fly (Dockerfile in `backend/`). Set
-  `SHOPIFY_STORES` as an environment variable in the host dashboard (never in the
-  repo). Also set `CORS_ORIGIN` to your deployed frontend's URL (e.g.
-  `https://your-dashboard.vercel.app`) so the CORS policy allows the browser to
-  reach the backend API and SSE stream.
-- **Frontend** → Vercel. Set `NEXT_PUBLIC_API_BASE` to the backend's URL.
-- Point Poke at `https://<backend-host>/mcp`.
-
-## Tests
-
-```bash
-cd backend && node --test    # unit tests for the registry + Shopify helpers
-```
-
-## v1 limitations (intentional, not bugs)
-
-- **Read-only.** No writes/mutations. The tool layer is structured so write tools
-  are a clean later addition; v1 requests only `read_orders`/`read_products`/`read_customers`.
-- **`get_sales`** reads a single 250-order page per store (a `capped` flag surfaces
-  overflow) and supports only `today`/`7d`/`30d` — custom date ranges are deferred.
-- **No sales sparkline** yet — `get_sales` returns the period total and order
-  count, not a per-day trend.
-- **`search_products`** is text search / listing only; true best-sellers ranking
-  by units sold (needs order/analytics aggregation) is deferred.
-
-## Project layout
+**Architecture at a glance**
 
 ```
 backend/
-  server.js      Express: REST + SSE + /mcp (streamable HTTP)
+  server.js      Express: REST + SSE + MCP-over-HTTP at /mcp (auth-gated)
   mcp-tools.js   the 6 read-only MCP tools (createMcpServer factory)
-  shopify.js     Admin GraphQL client + client-credentials token exchange + read fns
+  shopify.js     Admin GraphQL client + OAuth token exchange/cache + read fns
   stores.js      multi-store registry (parses SHOPIFY_STORES)
-  smoke.js       read-only smoke test against the real store
   test/          unit tests (node --test)
 frontend/
-  app/page.js            dashboard
+  app/page.js            live dashboard
   components/            ResultPanel, ActivityLog, Header
   lib/useShopTalk.js     SSE hook (activity, status, latest, stores)
+```
+
+This started as **MockBase** (the same real-time MCP + dashboard backbone wired
+to a throwaway SQLite database) and was re-pointed at the real Shopify API — the
+commit history shows that evolution step by step.
+
+---
+
+## Run it yourself
+
+### 1. Create a Shopify app (client-credentials)
+1. In the Shopify **[Dev Dashboard](https://dev.shopify.com)**, create an app under your org.
+2. Give it read scopes — `read_orders`, `read_products`, `read_customers` — and **release** the version.
+3. Install it on your store and copy the **Client ID** and **Client Secret** (`shpss_…`).
+4. Note your store's `*.myshopify.com` domain (Settings → Domains).
+
+### 2. Configure & run the backend
+Create `backend/.env` (gitignored — never commit it):
+```
+PORT=4000
+# Single-quote the value so Node's --env-file parser keeps it intact.
+SHOPIFY_STORES='[{"key":"main","label":"Main Store","shopDomain":"your-store.myshopify.com","clientId":"your_api_key","clientSecret":"shpss_xxx","apiVersion":"2026-01"}]'
+# Shared secret that protects /mcp (strongly recommended; required in production).
+MCP_TOKEN=some-long-random-string
+```
+```bash
+cd backend && npm install && node --env-file=.env server.js   # http://localhost:4000
+cd frontend && npm install && npm run dev                      # http://localhost:3000 (dashboard)
+```
+Sanity-check against your real store (read-only): `cd backend && node --env-file=.env smoke.js`
+
+### 3. Connect Poke
+```bash
+npx poke@latest login
+npx poke@latest mcp add http://localhost:4000/mcp -n ShopTalk -k <MCP_TOKEN>   # local (tunnel for a public URL)
+```
+Then text Poke a question.
+
+### Deploy (always-on)
+Deploy `backend/` to Railway/Render/Fly (Dockerfile included). Set `SHOPIFY_STORES`
+and `MCP_TOKEN` as host env vars (and `CORS_ORIGIN` to your dashboard URL if you
+deploy the frontend). Point Poke at `https://<host>/mcp` with `-k <MCP_TOKEN>` —
+no tunnel, runs 24/7. Not serverless: the SSE stream needs a long-lived connection.
+
+---
+
+## v1 limitations (intentional, documented — not bugs)
+- **Read-only.** No writes/mutations (write tools are a clean future addition).
+- `get_sales` reads one 250-order page per store (a `capped` flag surfaces overflow) and supports `today`/`7d`/`30d`.
+- No sales trend chart yet — `get_sales` returns the period total + order count.
+- `search_products` is text search / listing; true best-seller ranking by units sold is a future addition.
+
+## Tests
+```bash
+cd backend && node --test
 ```
