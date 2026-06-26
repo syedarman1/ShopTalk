@@ -38,7 +38,7 @@ export default function ChatPanel({ chat, questions, runQuestion }) {
             <button
               key={q.id}
               onClick={() => runQuestion(q.id)}
-              className="rounded-full border border-border bg-card px-3 py-1 text-xs text-foreground/90 hover:bg-muted"
+              className="rounded-full border border-border bg-card px-3 py-1 text-xs text-foreground/90 hover:bg-muted hover:border-shopify/50 hover:text-shopify-light"
             >
               {q.question}
             </button>

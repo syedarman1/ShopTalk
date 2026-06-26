@@ -10,7 +10,7 @@ export default function Sparkline({ series, width = 160, height = 36 }) {
       height={height}
       viewBox={`0 0 ${width} ${height}`}
       preserveAspectRatio="none"
-      className="text-emerald-400/80"
+      className="text-shopify-light"
       aria-hidden="true"
     >
       <polyline

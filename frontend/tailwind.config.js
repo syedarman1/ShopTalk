@@ -30,6 +30,7 @@ module.exports = {
           DEFAULT: "hsl(var(--accent))",
           foreground: "hsl(var(--accent-foreground))",
         },
+        shopify: { DEFAULT: "#008060", light: "#95bf47" },
       },
       borderRadius: {
         lg: "var(--radius)",

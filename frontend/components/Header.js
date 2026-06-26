@@ -3,7 +3,7 @@
 import { cn } from "@/lib/utils";
 
 const STATUS = {
-  live: { label: "Live", dot: "bg-emerald-500/80", text: "text-muted-foreground" },
+  live: { label: "Live", dot: "bg-shopify-light", text: "text-muted-foreground" },
   connecting: {
     label: "Connecting…",
     dot: "bg-muted-foreground",
