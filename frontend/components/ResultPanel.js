@@ -1,5 +1,6 @@
 "use client";
 import { ShoppingBag, Package, Users, Receipt, Store } from "lucide-react";
+import Sparkline from "./Sparkline";
 
 const fmtMoney = (byCurrency) =>
   Object.entries(byCurrency || {})
@@ -26,6 +27,7 @@ function Sales({ detail }) {
       </div>
       <div className="text-3xl font-semibold">{fmtMoney(byCurrency)}</div>
       <div className="text-sm text-muted-foreground">{orderCount} orders</div>
+      {detail.series && <Sparkline series={detail.series} />}
       {rollup && (
         <ul className="mt-2 space-y-1 text-sm">
           {detail.perStore.map((s) => (
