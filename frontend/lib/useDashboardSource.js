@@ -2,10 +2,11 @@
 import { useShopTalk } from "./useShopTalk";
 import { useDemo } from "./useDemo";
 
-// Mode is fixed per build (NEXT_PUBLIC_* is inlined at build time), so we pick the
-// hook ONCE at module load. That keeps the same hook running every render (Rules of
-// Hooks), and — crucially — demo builds never call useShopTalk, so no EventSource
-// is ever opened (the demo is fully air-gapped).
+// Mode is selected once at module load. NEXT_PUBLIC_LIVE_MODE is inlined by Next at
+// build time; in a demo build it is absent, so LIVE is false and useDemo is chosen.
+// useShopTalk (the only thing that opens an EventSource) is therefore never called in
+// a demo build — the air-gap is behavioral (the live hook is never invoked), and the
+// same hook runs every render so Rules of Hooks is satisfied.
 const LIVE = process.env.NEXT_PUBLIC_LIVE_MODE === "true";
 
 function useLiveSource() {

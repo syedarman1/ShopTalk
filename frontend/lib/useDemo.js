@@ -9,17 +9,12 @@ export function useDemo() {
   const [played, setPlayed] = useState([]); // [{ step, ts }]
   const idxRef = useRef(0);
   const autoRef = useRef(true);
-  const startedRef = useRef(false);
-
   const playStep = useCallback((step) => {
     // Rolling window so the chat/activity don't grow unbounded during auto-loop.
     setPlayed((prev) => [...prev, { step, ts: Date.now() }].slice(-DEMO_SCRIPT.length));
   }, []);
 
   useEffect(() => {
-    if (startedRef.current) return; // guard React strict-mode double-invoke
-    startedRef.current = true;
-
     const advance = () => {
       const step = DEMO_SCRIPT[idxRef.current % DEMO_SCRIPT.length];
       idxRef.current += 1;

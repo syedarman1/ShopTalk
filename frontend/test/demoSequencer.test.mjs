@@ -32,3 +32,10 @@ test("two played steps: latest is the last; activity is newest-first", () => {
   assert.equal(s.activity[0].type, b.event.type); // newest first
   assert.equal(s.activity[1].type, a.event.type);
 });
+
+test("chat ids stay unique when a step repeats in the window", () => {
+  const step = DEMO_SCRIPT[0];
+  const s = demoStateFor([{ step, ts: 1 }, { step, ts: 2 }]);
+  const ids = s.chat.map((m) => m.id);
+  assert.equal(new Set(ids).size, ids.length);
+});

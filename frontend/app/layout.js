@@ -5,9 +5,9 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-mono" });
 
 export const metadata = {
-  title: "MockBase — Real-time Text-to-Database Playground",
+  title: "ShopTalk — Text your Shopify store in plain English",
   description:
-    "Manage a local SQLite database via MCP tools and watch every mutation stream into the dashboard in real time.",
+    "Ask your Shopify store questions by text and get instant answers — a live MCP-powered dashboard. (Demo uses sample data.)",
 };
 
 export default function RootLayout({ children }) {
