@@ -11,7 +11,7 @@ const LIVE = process.env.NEXT_PUBLIC_LIVE_MODE === "true";
 
 function useLiveSource() {
   const s = useShopTalk();
-  return { ...s, chat: [], questions: [], runQuestion: () => {}, mode: "live" };
+  return { ...s, chat: [], typing: false, questions: [], runQuestion: () => {}, mode: "live" };
 }
 
 export const useDashboardSource = LIVE ? useLiveSource : useDemo;

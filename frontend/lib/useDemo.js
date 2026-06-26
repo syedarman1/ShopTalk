@@ -1,48 +1,64 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useReducedMotion } from "framer-motion";
 import { DEMO_SCRIPT, DEMO_STORES } from "./demoData.mjs";
-import { demoStateFor } from "./demoSequencer.mjs";
+import { composeDemoState } from "./demoSequencer.mjs";
 
-const STEP_MS = 3500;
+// ms after the question bubble that each phase fires.
+const PHASE_DELAYS = { typing: 600, reply: 1800, result: 2200 };
 
 export function useDemo() {
-  const [played, setPlayed] = useState([]); // [{ step, ts }]
-  const idxRef = useRef(0);
-  const autoRef = useRef(true);
-  const playStep = useCallback((step) => {
-    // Rolling window so the chat/activity don't grow unbounded during auto-loop.
-    setPlayed((prev) => [...prev, { step, ts: Date.now() }].slice(-DEMO_SCRIPT.length));
+  const [history, setHistory] = useState([]); // [{ step, ts }] completed exchanges
+  const [current, setCurrent] = useState(null); // { step, phase, ts } | null
+  const currentRef = useRef(null); // mirror of `current` for reads inside runQuestion
+  const timersRef = useRef([]);
+  const reduce = useReducedMotion();
+
+  const setPhase = useCallback((next) => {
+    currentRef.current = next;
+    setCurrent(next);
   }, []);
 
-  useEffect(() => {
-    const advance = () => {
-      const step = DEMO_SCRIPT[idxRef.current % DEMO_SCRIPT.length];
-      idxRef.current += 1;
-      playStep(step);
-    };
-    advance(); // show the first step immediately
-    const timer = setInterval(() => {
-      if (autoRef.current) advance();
-    }, STEP_MS);
-    return () => clearInterval(timer);
-  }, [playStep]);
+  const clearTimers = useCallback(() => {
+    timersRef.current.forEach(clearTimeout);
+    timersRef.current = [];
+  }, []);
 
   const runQuestion = useCallback(
     (id) => {
-      autoRef.current = false; // user took over — stop auto-advancing
       const step = DEMO_SCRIPT.find((s) => s.id === id);
-      if (step) playStep(step);
+      if (!step) return;
+      clearTimers();
+      const ts = Date.now();
+      // Commit any prior in-progress exchange to history before starting the new one.
+      const prev = currentRef.current;
+      if (prev) {
+        setHistory((h) => [...h, { step: prev.step, ts: prev.ts }].slice(-DEMO_SCRIPT.length));
+      }
+      if (reduce) {
+        setPhase({ step, phase: "result", ts }); // no typing delay for reduced motion
+        return;
+      }
+      setPhase({ step, phase: "user", ts });
+      timersRef.current = [
+        setTimeout(() => setPhase({ step, phase: "typing", ts }), PHASE_DELAYS.typing),
+        setTimeout(() => setPhase({ step, phase: "reply", ts }), PHASE_DELAYS.reply),
+        setTimeout(() => setPhase({ step, phase: "result", ts }), PHASE_DELAYS.result),
+      ];
     },
-    [playStep]
+    [clearTimers, reduce, setPhase]
   );
 
-  const { chat, latest, activity } = demoStateFor(played);
+  useEffect(() => clearTimers, [clearTimers]); // clear timers on unmount
+
+  const { chat, typing, latest, activity } = composeDemoState(history, current);
   return {
     activity,
     status: "live",
     latest,
     stores: DEMO_STORES,
     chat,
+    typing,
     questions: DEMO_SCRIPT.map((s) => ({ id: s.id, question: s.question })),
     runQuestion,
     mode: "demo",
