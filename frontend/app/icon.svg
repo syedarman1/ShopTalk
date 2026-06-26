@@ -1,8 +1,9 @@
-<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="7.25" fill="#1c1d21" stroke="#34353a" stroke-width="1.5"/>
-  <g transform="translate(4 4)" stroke="#ededf0" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-    <ellipse cx="12" cy="5" rx="8.5" ry="3"/>
-    <path d="M3.5 5V19A8.5 3 0 0 0 20.5 19V5"/>
-    <path d="M3.5 12A8.5 3 0 0 0 20.5 12"/>
+<svg width="100" height="100" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ShopTalk">
+  <rect width="100" height="100" rx="22" fill="#008060"/>
+  <path d="M24 30 h52 q8 0 8 8 v22 q0 8 -8 8 h-30 l-14 12 v-12 h-8 q-8 0 -8 -8 v-22 q0 -8 8 -8 z" fill="#ffffff"/>
+  <g fill="#008060">
+    <circle cx="40" cy="49" r="4.5"/>
+    <circle cx="50" cy="49" r="4.5"/>
+    <circle cx="60" cy="49" r="4.5"/>
   </g>
 </svg>
