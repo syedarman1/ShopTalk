@@ -3,7 +3,12 @@ import { motion } from "framer-motion";
 
 export default function TypingIndicator() {
   return (
-    <div className="flex justify-start">
+    <motion.div
+      className="flex justify-start"
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.9 }}
+    >
       <div className="flex items-center gap-1 rounded-2xl rounded-bl-sm bg-muted px-3 py-2.5">
         {[0, 1, 2].map((i) => (
           <motion.span
@@ -14,6 +19,6 @@ export default function TypingIndicator() {
           />
         ))}
       </div>
-    </div>
+    </motion.div>
   );
 }

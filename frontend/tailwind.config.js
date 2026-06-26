@@ -45,14 +45,9 @@ module.exports = {
           "0%": { transform: "scale(1)", opacity: "0.55" },
           "70%, 100%": { transform: "scale(2.6)", opacity: "0" },
         },
-        "flash-in": {
-          "0%": { backgroundColor: "hsl(var(--accent) / 0.10)" },
-          "100%": { backgroundColor: "transparent" },
-        },
       },
       animation: {
         "ping-slow": "ping-slow 2.6s cubic-bezier(0, 0, 0.2, 1) infinite",
-        "flash-in": "flash-in 1.2s ease-out",
       },
     },
   },

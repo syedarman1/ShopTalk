@@ -1,11 +1,11 @@
-// demoSequencer.mjs — pure reducer: the list of played steps -> dashboard state.
-// No React, no timers. `played` is an array of { step, ts } (ts = ms epoch).
+// demoSequencer.mjs — pure reducer: composeDemoState(history, current) -> dashboard state.
+// No React, no timers. history is Array<{ step, ts }> (completed exchanges); current is { step, phase, ts } | null.
 
 export const PHASES = ["user", "typing", "reply", "result"];
 
-function chatForStep(step, i, includeReply) {
-  const msgs = [{ id: `${step.id}-q-${i}`, role: "user", text: step.question }];
-  if (includeReply) msgs.push({ id: `${step.id}-a-${i}`, role: "poke", text: step.reply });
+function chatForStep(step, key, includeReply) {
+  const msgs = [{ id: `${step.id}-q-${key}`, role: "user", text: step.question }];
+  if (includeReply) msgs.push({ id: `${step.id}-a-${key}`, role: "poke", text: step.reply });
   return msgs;
 }
 
@@ -14,20 +14,19 @@ function chatForStep(step, i, includeReply) {
 export function composeDemoState(history, current) {
   const chat = [];
   const activity = [];
-  history.forEach(({ step, ts }, i) => {
-    chat.push(...chatForStep(step, i, true));
-    activity.unshift({ id: `${step.id}-${i}`, ...step.event, timestamp: ts });
+  history.forEach(({ step, ts }) => {
+    chat.push(...chatForStep(step, ts, true));
+    activity.unshift({ id: `${step.id}-${ts}`, ...step.event, timestamp: ts });
   });
   let typing = false;
   let latest = history.length ? history[history.length - 1].step.event : null;
   if (current) {
-    const i = history.length;
     const { step, phase, ts } = current;
-    chat.push(...chatForStep(step, i, phase === "reply" || phase === "result"));
+    chat.push(...chatForStep(step, ts, phase === "reply" || phase === "result"));
     typing = phase === "typing";
     if (phase === "result") {
       latest = step.event;
-      activity.unshift({ id: `${step.id}-${i}`, ...step.event, timestamp: ts });
+      activity.unshift({ id: `${step.id}-${ts}`, ...step.event, timestamp: ts });
     }
   }
   return { chat, typing, latest, activity };

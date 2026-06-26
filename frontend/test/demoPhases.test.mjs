@@ -60,3 +60,11 @@ test("while current is mid-flight, latest stays the last completed step's event"
   const s = composeDemoState([{ step: A, ts: 1 }], { step: B, phase: "typing", ts: 2 });
   assert.equal(s.latest, A.event);
 });
+
+test("a survivor's chat key is stable when the oldest exchange is dropped (no re-key flicker)", () => {
+  const full = composeDemoState([{ step: A, ts: 1 }, { step: B, ts: 2 }], null);
+  const dropped = composeDemoState([{ step: B, ts: 2 }], null);
+  const kFull = full.chat.find((m) => m.text === B.question).id;
+  const kDropped = dropped.chat.find((m) => m.text === B.question).id;
+  assert.equal(kFull, kDropped);
+});

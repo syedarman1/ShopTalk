@@ -18,7 +18,7 @@ export default function ChatPanel({ chat, typing, questions, runQuestion }) {
         <span className="text-base">📱</span> iMessage · Poke
       </div>
 
-      <div ref={scrollRef} className="flex-1 space-y-2 overflow-auto px-1">
+      <motion.div ref={scrollRef} layoutScroll className="flex-1 space-y-2 overflow-auto px-1">
         {chat.length === 0 && !typing && (
           <div className="flex h-full items-center justify-center px-4 text-center text-sm text-muted-foreground">
             👋 Tap a question below to ask Northwind Supply Co.
@@ -47,8 +47,8 @@ export default function ChatPanel({ chat, typing, questions, runQuestion }) {
             </motion.div>
           ))}
         </AnimatePresence>
-        {typing && <TypingIndicator />}
-      </div>
+        <AnimatePresence>{typing && <TypingIndicator key="typing" />}</AnimatePresence>
+      </motion.div>
 
       <div className="mt-3 px-1">
         <div className="mb-2 flex flex-wrap gap-2">
