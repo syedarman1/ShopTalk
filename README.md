@@ -1,5 +1,8 @@
 # ShopTalk
 
+**Live demo:** <your-vercel-url> — a self-contained walkthrough with **sample data**
+(no real store, no backend). The real dashboard runs locally against your store.
+
 **Text your Shopify store a question in plain English and get a real answer back — over iMessage.**
 
 > *"How much did I sell today?"* → *"$1,240 across 18 orders today."*
