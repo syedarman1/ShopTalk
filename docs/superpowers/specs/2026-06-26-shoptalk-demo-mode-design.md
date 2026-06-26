@@ -112,6 +112,10 @@ result it produces (a broadcast-shaped event + the latest result payload).
 - **Live Activity** — rows slide in at the top with tool name + store.
 - **Header** — a subtle **"Demo · sample data"** badge in demo mode; refined
   typography/spacing; keep the dark theme.
+- **Shopify-green accents** — apply Shopify green (`#008060`, logo green `#95bf47`)
+  as an *accent only* on the dark base (sparkline, live status dot, chip hover,
+  the subtle entrance-flash tint). The chat bubbles stay iMessage-blue so the two
+  colors narrate "iMessage ↔ Shopify." Not a repaint; the dark theme is kept.
 
 ## Files
 

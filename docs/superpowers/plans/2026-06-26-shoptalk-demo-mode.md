@@ -693,9 +693,50 @@ git commit -m "Document demo/live mode flag and add live-demo note"
 
 ---
 
+### Task 7: Shopify-green accents (tasteful, dark base kept)
+
+**Files:**
+- Modify: `frontend/tailwind.config.js`, `frontend/app/globals.css`, `frontend/components/Sparkline.js`, `frontend/components/Header.js`, `frontend/components/ChatPanel.js`
+
+**Goal:** make the dashboard read as a *Shopify* tool at a glance by applying Shopify green (`#008060`, logo green `#95bf47`) as an **accent** — sparkline, the live status dot, chip hover, and the subtle flash tint. Keep the clean dark base. **Chat bubbles stay iMessage-blue** so the two colors narrate "iMessage ↔ Shopify."
+
+- [ ] **Step 1: Add Shopify colors to `frontend/tailwind.config.js`**
+
+In the `theme.extend.colors` object, add a `shopify` entry immediately after the `accent: {...}` block:
+```javascript
+      shopify: { DEFAULT: "#008060", light: "#95bf47" },
+```
+(This yields `bg-shopify`, `text-shopify`, `border-shopify`, and the lighter `*-shopify-light` utilities.)
+
+- [ ] **Step 2: Green the sparkline** — in `frontend/components/Sparkline.js`, change the `<svg>` className from `"text-emerald-400/80"` to `"text-shopify-light"`.
+
+- [ ] **Step 3: Green the live status dot** — in `frontend/components/Header.js`, in the `STATUS` map change the `live` entry's `dot` from `"bg-emerald-500/80"` to `"bg-shopify-light"` (the `animate-ping-slow` overlay reuses `s.dot`, so the live ping goes green too).
+
+- [ ] **Step 4: Green the chip hover** — in `frontend/components/ChatPanel.js`, append `hover:border-shopify/50 hover:text-shopify-light` to the chip button's className (after the existing `hover:bg-muted`), so the "Try ▸" chips pick up a Shopify-green accent on hover.
+
+- [ ] **Step 5: Tint the entrance flash green** — in `frontend/app/globals.css`, change `--accent: 220 8% 72%;` to `--accent: 165 100% 25%;` (the HSL of `#008060`). The `animate-flash-in` keyframe uses `hsl(var(--accent) / 0.10)`, so result/activity items now flash a faint green on arrival. (`--accent` is otherwise only used at low opacity — no readability impact; components use `bg-card`/`bg-muted`, not `bg-accent`.)
+
+- [ ] **Step 6: Build, screenshot, eyeball it**
+
+```bash
+cd frontend && npm run build && (npm run start &) && sleep 3
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu --hide-scrollbars \
+  --screenshot=/tmp/shoptalk-demo-green.png --window-size=1440,900 --virtual-time-budget=6000 http://localhost:3000
+```
+Expected: green sparkline + green live dot + green chip-hover + faint green flashes, while the **chat bubbles remain blue** and the base stays dark. **Look at the screenshot** — confirm it reads as on-brand, not garish. Stop the server after.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add frontend/tailwind.config.js frontend/app/globals.css frontend/components/Sparkline.js frontend/components/Header.js frontend/components/ChatPanel.js
+git commit -m "Add Shopify-green accents to the dashboard (dark base kept, chat stays blue)"
+```
+
+---
+
 ## Self-Review Notes
 
-- **Spec coverage:** demo-by-default flag + air-gapped switch (Task 3, Global Constraints) ✓; mock store "Northwind Supply Co." with faithful shapes (Task 1) ✓; hybrid auto-play + clickable (Task 3 `useDemo`) ✓; story layout chat+result+activity (Task 5) ✓; polished look — iMessage bubbles (Task 4), sparkline (Task 2), `animate-flash-in` entrance + demo badge (Tasks 4–5) ✓; pure-logic unit tests (Tasks 1–2) ✓; deploy/safety env + README (Task 6) ✓; real dashboard untouched — `useShopTalk.js` unchanged, only consumed via the switch (Task 3) ✓.
+- **Spec coverage:** demo-by-default flag + air-gapped switch (Task 3, Global Constraints) ✓; mock store "Northwind Supply Co." with faithful shapes (Task 1) ✓; hybrid auto-play + clickable (Task 3 `useDemo`) ✓; story layout chat+result+activity (Task 5) ✓; polished look — iMessage bubbles (Task 4), sparkline (Task 2), `animate-flash-in` entrance + demo badge (Tasks 4–5) ✓; pure-logic unit tests (Tasks 1–2) ✓; deploy/safety env + README (Task 6) ✓; real dashboard untouched — `useShopTalk.js` unchanged, only consumed via the switch (Task 3) ✓; Shopify-green accent theming — accent-only on the dark base, chat stays iMessage-blue (Task 7) ✓.
 - **Air-gap guarantee:** the mode is resolved at module load; demo builds export `useDemo` and never invoke `useShopTalk`, so no `EventSource` is created. Confirmed by the constraint and Task 3 Step 2 rationale.
 - **No placeholders:** every code step is complete; tests show real assertions; the only fill-in is the deploy URL in the README, which is unknowable until deploy and clearly marked.
 - **Type/shape consistency:** `demoStateFor` consumes `{step, ts}` (Task 1) exactly as `useDemo` produces it (Task 3); demo event `detail` shapes (Task 1) match `ResultPanel`'s readers (orders `name/customer/total/currency/fulfillmentStatus`, products `title/price/currency/totalInventory/status`, customers `name/email/orders/amountSpent/currency`, sales `totalsByCurrency/orderCount/series`); `sparklinePoints` signature (Task 2) matches `Sparkline` usage; the dashboard shape returned by `useDashboardSource` (Task 3) matches what `page.js` destructures (Task 5).
