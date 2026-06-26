@@ -1,6 +1,7 @@
 "use client";
 import { ShoppingBag, Package, Users, Receipt, Store } from "lucide-react";
 import Sparkline from "./Sparkline";
+import { motion, AnimatePresence } from "framer-motion";
 
 const fmtMoney = (byCurrency) =>
   Object.entries(byCurrency || {})
@@ -60,7 +61,7 @@ function Rows({ icon: Icon, title, headers, rows }) {
   );
 }
 
-export default function ResultPanel({ latest }) {
+function renderResult(latest) {
   if (!latest) return <Empty />;
   const d = latest.detail;
 
@@ -139,4 +140,22 @@ export default function ResultPanel({ latest }) {
   }
 
   return <Empty />;
+}
+
+export default function ResultPanel({ latest }) {
+  const key = latest ? `${latest.tool}:${latest.message}` : "empty";
+  return (
+    <AnimatePresence mode="wait">
+      <motion.div
+        key={key}
+        initial={{ opacity: 0, y: 8 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: -8 }}
+        transition={{ duration: 0.25 }}
+        className="h-full"
+      >
+        {renderResult(latest)}
+      </motion.div>
+    </AnimatePresence>
+  );
 }
