@@ -79,7 +79,7 @@ text can never modify your data.
 
 ---
 
-## For the technically curious (and recruiters 👋)
+## Under the hood
 
 ShopTalk is a compact but production-shaped full-stack project. Highlights:
 
