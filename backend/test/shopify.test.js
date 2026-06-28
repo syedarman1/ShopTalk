@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { periodToRange, shapeOrder, aggregateSales, shapeProduct, shapeCustomer } from "../shopify.js";
+import { periodToRange, shapeOrder, summarizeSales, aggregateSales, shapeProduct, shapeCustomer } from "../shopify.js";
 
 test("periodToRange('today') returns midnight UTC of now", () => {
   const now = new Date("2026-06-20T15:30:00Z");
@@ -47,7 +47,63 @@ test("shapeOrder flattens a GraphQL order node", () => {
     fulfillmentStatus: "UNFULFILLED",
     financialStatus: "PAID",
     customer: "Ada Lovelace",
+    test: false,
+    cancelledAt: null,
   });
+});
+
+test("shapeOrder surfaces test and cancelledAt when present", () => {
+  const node = {
+    name: "#1002",
+    createdAt: "2026-06-20T11:00:00Z",
+    displayFulfillmentStatus: "FULFILLED",
+    displayFinancialStatus: "PAID",
+    currentTotalPriceSet: { shopMoney: { amount: "10.00", currencyCode: "USD" } },
+    customer: { displayName: "Test Buyer" },
+    test: true,
+    cancelledAt: "2026-06-20T12:00:00Z",
+  };
+  const o = shapeOrder(node);
+  assert.equal(o.test, true);
+  assert.equal(o.cancelledAt, "2026-06-20T12:00:00Z");
+});
+
+test("summarizeSales sums revenue by currency and computes per-currency AOV", () => {
+  const r = summarizeSales([
+    { total: 100, currency: "USD", test: false, cancelledAt: null },
+    { total: 50, currency: "USD", test: false, cancelledAt: null },
+    { total: 20, currency: "EUR", test: false, cancelledAt: null },
+  ]);
+  assert.equal(r.orderCount, 3);
+  assert.deepEqual(r.totalsByCurrency, { USD: 150, EUR: 20 });
+  // AOV is per currency: USD = 150/2, EUR = 20/1 — not divided by the total count.
+  assert.deepEqual(r.averageByCurrency, { USD: 75, EUR: 20 });
+});
+
+test("summarizeSales excludes test orders from revenue and count", () => {
+  const r = summarizeSales([
+    { total: 100, currency: "USD", test: false, cancelledAt: null },
+    { total: 999, currency: "USD", test: true, cancelledAt: null },
+  ]);
+  assert.equal(r.orderCount, 1);
+  assert.deepEqual(r.totalsByCurrency, { USD: 100 });
+  assert.deepEqual(r.averageByCurrency, { USD: 100 });
+});
+
+test("summarizeSales excludes cancelled orders from revenue and count", () => {
+  const r = summarizeSales([
+    { total: 100, currency: "USD", test: false, cancelledAt: null },
+    { total: 40, currency: "USD", test: false, cancelledAt: "2026-06-20T12:00:00Z" },
+  ]);
+  assert.equal(r.orderCount, 1);
+  assert.deepEqual(r.totalsByCurrency, { USD: 100 });
+});
+
+test("summarizeSales handles an empty list without dividing by zero", () => {
+  const r = summarizeSales([]);
+  assert.equal(r.orderCount, 0);
+  assert.deepEqual(r.totalsByCurrency, {});
+  assert.deepEqual(r.averageByCurrency, {});
 });
 
 test("aggregateSales sums counts and groups totals by currency", () => {

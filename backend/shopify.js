@@ -48,7 +48,36 @@ export function shapeOrder(node) {
     fulfillmentStatus: node.displayFulfillmentStatus ?? null,
     financialStatus: node.displayFinancialStatus ?? null,
     customer: node.customer?.displayName ?? null,
+    test: node.test === true,
+    cancelledAt: node.cancelledAt ?? null,
   };
+}
+
+/**
+ * Revenue summary for a list of shaped orders. Test orders (Shopify's
+ * Bogus/test gateway) and cancelled orders are excluded so "today's sales"
+ * reflects real, live revenue — not test checkouts or voided orders. Totals
+ * are grouped by currency (never summed across currencies); AOV is per currency.
+ */
+export function summarizeSales(orders) {
+  const totalsByCurrency = {};
+  const countByCurrency = {};
+  let orderCount = 0;
+  for (const o of orders) {
+    if (o.test || o.cancelledAt != null) continue; // exclude test & cancelled from revenue
+    orderCount += 1;
+    if (o.currency != null && o.total != null) {
+      totalsByCurrency[o.currency] = (totalsByCurrency[o.currency] || 0) + o.total;
+      countByCurrency[o.currency] = (countByCurrency[o.currency] || 0) + 1;
+    }
+  }
+  // AOV is per currency: a currency's total divided by *its own* order count,
+  // not the overall count (which would understate it in multi-currency stores).
+  const averageByCurrency = {};
+  for (const [cur, total] of Object.entries(totalsByCurrency)) {
+    averageByCurrency[cur] = total / countByCurrency[cur];
+  }
+  return { orderCount, totalsByCurrency, averageByCurrency };
 }
 
 /** Flatten a GraphQL product node. */
@@ -194,7 +223,7 @@ export async function shopifyGraphQL(store, query, variables = {}) {
 }
 
 const ORDER_FIELDS = `
-  name createdAt displayFulfillmentStatus displayFinancialStatus
+  name createdAt displayFulfillmentStatus displayFinancialStatus test cancelledAt
   currentTotalPriceSet { shopMoney { amount currencyCode } }
   customer { displayName }
 `;
@@ -214,19 +243,9 @@ export async function getSales(storeKey, period = "today") {
   const data = await shopifyGraphQL(store, query, {
     q: `created_at:>=${since}`,
   });
-  const edges = data.orders.edges;
-  const totalsByCurrency = {};
-  for (const { node } of edges) {
-    const o = shapeOrder(node);
-    if (o.currency != null && o.total != null) {
-      totalsByCurrency[o.currency] = (totalsByCurrency[o.currency] || 0) + o.total;
-    }
-  }
-  const orderCount = edges.length;
-  const averageByCurrency = {};
-  for (const [cur, total] of Object.entries(totalsByCurrency)) {
-    averageByCurrency[cur] = orderCount ? total / orderCount : 0;
-  }
+  const orders = data.orders.edges.map((e) => shapeOrder(e.node));
+  // Excludes test & cancelled orders so revenue reflects real sales.
+  const { orderCount, totalsByCurrency, averageByCurrency } = summarizeSales(orders);
   return {
     store: store.key,
     label,
