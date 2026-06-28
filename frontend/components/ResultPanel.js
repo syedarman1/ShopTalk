@@ -2,6 +2,8 @@
 import { ShoppingBag, Package, Users, Receipt, Store } from "lucide-react";
 import RevenueChart from "./RevenueChart";
 import { pctChange } from "../lib/revenueChart.mjs";
+import { PanelHeader, StatStrip, StatusPill, SplitBar, SpendBar } from "./PanelUI";
+import { summarizeOrders, summarizeProducts, summarizeCustomers, stockLevel } from "../lib/panelSummaries.mjs";
 import { motion, AnimatePresence } from "framer-motion";
 
 const fmtMoney = (byCurrency) =>
@@ -79,6 +81,105 @@ function Sales({ detail }) {
   );
 }
 
+const fulfillLabel = (s) =>
+  ({ FULFILLED: "Fulfilled", UNFULFILLED: "Unfulfilled", PARTIALLY_FULFILLED: "Partial" }[s] || s || "—");
+
+function Orders({ orders }) {
+  const { count, valueByCurrency, unfulfilled } = summarizeOrders(orders);
+  const badge = unfulfilled > 0
+    ? <StatusPill tone="warn">{unfulfilled} unfulfilled</StatusPill>
+    : <StatusPill tone="success">all fulfilled</StatusPill>;
+  return (
+    <div className="space-y-4">
+      <PanelHeader icon={Receipt} title="Recent orders" badge={badge} />
+      <StatStrip stats={[
+        { label: "Orders", value: count },
+        { label: "Value", value: fmtMoney(valueByCurrency) },
+        { label: "Unfulfilled", value: unfulfilled },
+      ]} />
+      <SplitBar parts={[
+        { value: count - unfulfilled, className: "bg-shopify" },
+        { value: unfulfilled, className: "bg-amber-400" },
+      ]} />
+      <ul>
+        {orders.map((o) => (
+          <li key={o.name} className="flex items-center gap-3 border-t border-border/50 py-2 text-sm">
+            <span className="w-14 font-mono text-muted-foreground">{o.name}</span>
+            <span className="flex-1 truncate">{o.customer ?? "—"}</span>
+            <span className="font-mono">{o.total != null ? `${o.total.toFixed(2)} ${o.currency}` : "—"}</span>
+            <span className="w-24 text-right">
+              <StatusPill tone={o.fulfillmentStatus === "FULFILLED" ? "success" : o.fulfillmentStatus ? "warn" : "muted"}>
+                {fulfillLabel(o.fulfillmentStatus)}
+              </StatusPill>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function Products({ products }) {
+  const { count, active, needRestock } = summarizeProducts(products);
+  const badge = needRestock > 0
+    ? <StatusPill tone="warn">{needRestock} need restock</StatusPill>
+    : <StatusPill tone="success">stock healthy</StatusPill>;
+  return (
+    <div className="space-y-4">
+      <PanelHeader icon={Package} title="Products" badge={badge} />
+      <StatStrip stats={[
+        { label: "Products", value: count },
+        { label: "Active", value: active },
+        { label: "Need restock", value: needRestock },
+      ]} />
+      <ul>
+        {products.map((p, i) => {
+          const lvl = stockLevel(p.totalInventory);
+          const tone = lvl === "out" ? "danger" : lvl === "low" ? "warn" : "success";
+          const text = lvl === "out" ? "Out of stock" : lvl === "low" ? `Low · ${p.totalInventory}` : `${p.totalInventory ?? "—"} in stock`;
+          return (
+            <li key={`${p.title}-${i}`} className="flex items-center gap-3 border-t border-border/50 py-2 text-sm">
+              <span className="flex flex-1 items-center gap-2 truncate">
+                <span className="truncate">{p.title}</span>
+                {p.status !== "ACTIVE" && <StatusPill tone="muted">Draft</StatusPill>}
+              </span>
+              <span className="font-mono">{p.price != null ? `${p.price.toFixed(2)} ${p.currency}` : "—"}</span>
+              <span className="w-28 text-right"><StatusPill tone={tone}>{text}</StatusPill></span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+function Customers({ customers }) {
+  const { count, spentByCurrency, avgOrders, maxSpent } = summarizeCustomers(customers);
+  return (
+    <div className="space-y-4">
+      <PanelHeader icon={Users} title="Repeat customers" badge={<StatusPill tone="muted">{count} customers</StatusPill>} />
+      <StatStrip stats={[
+        { label: "Customers", value: count },
+        { label: "Total spent", value: fmtMoney(spentByCurrency) },
+        { label: "Avg orders", value: avgOrders },
+      ]} />
+      <ul className="space-y-2">
+        {customers.map((c, i) => (
+          <li key={`${c.email}-${i}`} className="space-y-1 border-t border-border/50 pt-2">
+            <div className="flex items-center gap-3 text-sm">
+              <span className="w-5 text-center font-mono text-muted-foreground">{i + 1}</span>
+              <span className="flex-1 truncate">{c.name}</span>
+              <span className="text-muted-foreground">{c.orders ?? "—"} orders</span>
+              <span className="font-mono">{c.amountSpent != null ? `${c.amountSpent.toFixed(2)} ${c.currency}` : "—"}</span>
+            </div>
+            <div className="pl-8"><SpendBar fraction={maxSpent ? (c.amountSpent || 0) / maxSpent : 0} /></div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function Rows({ icon: Icon, title, headers, rows }) {
   return (
     <div className="space-y-3">
@@ -105,58 +206,12 @@ function renderResult(latest) {
 
   if (latest.type === "orders" || latest.type === "order") {
     const orders = latest.type === "order" ? (d ? [d] : []) : d || [];
-    return (
-      <Rows
-        icon={Receipt}
-        title={latest.message}
-        headers={["Order", "Customer", "Total", "Fulfillment"]}
-        rows={orders.map((o) => (
-          <tr key={o.name} className="border-t border-border/50">
-            <td className="py-1 pr-3 font-mono">{o.name}</td>
-            <td className="py-1 pr-3">{o.customer ?? "—"}</td>
-            <td className="py-1 pr-3 font-mono">{o.total != null ? `${o.total.toFixed(2)} ${o.currency}` : "—"}</td>
-            <td className="py-1 pr-3 text-muted-foreground">{o.fulfillmentStatus ?? "—"}</td>
-          </tr>
-        ))}
-      />
-    );
+    return <Orders orders={orders} />;
   }
 
-  if (latest.type === "products") {
-    return (
-      <Rows
-        icon={Package}
-        title={latest.message}
-        headers={["Product", "Price", "Inventory", "Status"]}
-        rows={(d || []).map((p, i) => (
-          <tr key={`${p.title}-${i}`} className="border-t border-border/50">
-            <td className="py-1 pr-3">{p.title}</td>
-            <td className="py-1 pr-3 font-mono">{p.price != null ? `${p.price.toFixed(2)} ${p.currency}` : "—"}</td>
-            <td className="py-1 pr-3 font-mono">{p.totalInventory ?? "—"}</td>
-            <td className="py-1 pr-3 text-muted-foreground">{p.status ?? "—"}</td>
-          </tr>
-        ))}
-      />
-    );
-  }
+  if (latest.type === "products") return <Products products={d || []} />;
 
-  if (latest.type === "customers") {
-    return (
-      <Rows
-        icon={Users}
-        title={latest.message}
-        headers={["Customer", "Email", "Orders", "Spent"]}
-        rows={(d || []).map((c, i) => (
-          <tr key={`${c.email}-${i}`} className="border-t border-border/50">
-            <td className="py-1 pr-3">{c.name}</td>
-            <td className="py-1 pr-3 text-muted-foreground">{c.email ?? "—"}</td>
-            <td className="py-1 pr-3 font-mono">{c.orders ?? "—"}</td>
-            <td className="py-1 pr-3 font-mono">{c.amountSpent != null ? `${c.amountSpent.toFixed(2)} ${c.currency}` : "—"}</td>
-          </tr>
-        ))}
-      />
-    );
-  }
+  if (latest.type === "customers") return <Customers customers={d || []} />;
 
   if (latest.type === "stores") {
     return (
