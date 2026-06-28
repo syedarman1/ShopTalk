@@ -32,17 +32,22 @@ suite; it answers the handful of questions a merchant actually texts about.
 
 ## First, two terms (in case they're new)
 
-**What's "Poke"?** [Poke](https://poke.com) is an AI assistant you talk to over
-iMessage/SMS — like texting a smart helper. On its own it can chat, but it can
-also be connected to *external tools* so it can do real things (read your email,
-check a calendar… or, here, look up your Shopify store).
+**What's "Poke"?** [Poke](https://poke.com) (by The Interaction Company of
+California) is a personal AI assistant you text like a friend — over **Apple
+Messages (iMessage), SMS, WhatsApp, Telegram, and RCS**, with no separate app to
+open. On its own it handles things like email, calendar, and reminders. Connect
+it to *external tools* and it can do far more — and the way you connect those
+tools is **MCP**.
 
 **What's "MCP"?** The [Model Context Protocol](https://modelcontextprotocol.io)
 is an open standard (think "USB-C for AI assistants") that lets an AI connect to
 an outside tool or data source in a consistent way. A program that speaks MCP
-exposes a set of **tools** the AI can call. **ShopTalk is an MCP server** — it
-exposes six read-only tools backed by the Shopify Admin API. Poke is the MCP
-*client* that calls them when you text a question.
+exposes a set of **tools** the AI can call. Poke acts as an **MCP host**: you add
+an integration (a built-in "recipe" or any custom MCP server URL), Poke
+discovers the tools that server exposes, and it calls them when a text needs one.
+**ShopTalk is one such custom MCP server** — it exposes six read-only tools
+backed by the Shopify Admin API, and Poke is the client that calls them when you
+text a question about your store.
 
 So the flow is:
 
@@ -128,6 +133,9 @@ commit history shows that evolution step by step.
 
 ## Run it yourself
 
+**Requirements:** a [Poke](https://poke.com) account (the free tier works), a
+Shopify store, and Node 22+.
+
 ### 1. Create a Shopify app (client-credentials)
 1. In the Shopify **[Dev Dashboard](https://dev.shopify.com)**, create an app under your org.
 2. Give it read scopes — `read_orders`, `read_products`, `read_customers` — and **release** the version.
@@ -150,11 +158,15 @@ cd frontend && npm install && npm run dev                      # http://localhos
 Sanity-check against your real store (read-only): `cd backend && node --env-file=.env smoke.js`
 
 ### 3. Connect Poke
+Add ShopTalk as an integration — via the CLI:
 ```bash
 npx poke@latest login
 npx poke@latest mcp add http://localhost:4000/mcp -n ShopTalk -k <MCP_TOKEN>   # local (tunnel for a public URL)
 ```
-Then text Poke a question.
+…or from Poke's web app (**Integrations → New**): paste the MCP Server URL and the
+key. Either way Poke sends the key as an `Authorization: Bearer <token>` header on
+every request, which ShopTalk validates against `MCP_TOKEN`; on connect it
+discovers the six tools automatically. Then just text Poke a question.
 
 ### Deploy (always-on)
 Deploy `backend/` to Railway/Render/Fly (Dockerfile included). Set `SHOPIFY_STORES`
