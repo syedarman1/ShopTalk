@@ -13,8 +13,10 @@ respond as soon as I can.
 - **Credentials:** Shopify Client ID/Secret live only in environment variables and
   are never committed (`.env` is gitignored). The app exchanges them for a
   short-lived (24h) access token at runtime.
-- **MCP endpoint:** `/mcp` (and the dashboard's `/api/events` stream) are gated by a
-  shared secret (`MCP_TOKEN`) so store data is not publicly readable.
+- **MCP endpoint:** `/mcp` and the dashboard's `/api/events` stream require a shared
+  secret (`MCP_TOKEN`) so store data is not publicly readable. If `MCP_TOKEN` is
+  unset, both **fail closed** — accepting local (loopback) requests only — so a
+  deployed instance is never wide open by default.
 
 ## Supported version
 

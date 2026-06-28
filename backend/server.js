@@ -9,6 +9,7 @@ import cors from "cors";
 import { listStoreSummaries } from "./stores.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createMcpServer } from "./mcp-tools.js";
+import { mcpAuthorized, isLoopback } from "./auth.js";
 
 const PORT = process.env.PORT || 4000;
 const app = express();
@@ -50,7 +51,7 @@ function broadcast(event) {
 app.get("/api/events", (req, res) => {
   // The SSE stream carries tool results (incl. customer data), so gate it like
   // /mcp. Browsers can't set headers on EventSource, so the dashboard passes the
-  // token as ?token=... When MCP_TOKEN is unset this is open (dev only).
+  // token as ?token=... When MCP_TOKEN is unset, only loopback is allowed.
   if (!mcpAuthorized(req)) return res.status(401).json({ error: "unauthorized" });
   res.set({
     "Content-Type": "text/event-stream",
@@ -104,8 +105,7 @@ app.get("/api/stores", (_req, res) => {
 // Internal hook the MCP process calls after a successful tool run. Not meant
 // for browsers — it simply fans the event out to all SSE clients.
 app.post("/internal/broadcast", (req, res) => {
-  const ip = req.socket.remoteAddress || "";
-  if (!["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(ip)) {
+  if (!isLoopback(req)) {
     return res.status(403).json({ error: "forbidden" });
   }
   const event = req.body || {};
@@ -136,18 +136,6 @@ function forceAccept(req) {
     next.push("Accept", value);
     req.rawHeaders = next;
   }
-}
-
-// Optional shared-secret auth for /mcp. When MCP_TOKEN is set, every /mcp request
-// must present it (Bearer, X-API-Key, or X-ShopTalk-Token — covers how MCP clients
-// like Poke's `mcp add -k` send a key). When unset, /mcp is open (dev only).
-function mcpAuthorized(req) {
-  const expected = process.env.MCP_TOKEN;
-  if (!expected) return true;
-  const auth = req.get("authorization") || "";
-  const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : null;
-  const provided = bearer || req.get("x-api-key") || req.get("x-shoptalk-token") || req.query.token;
-  return provided === expected;
 }
 
 async function handleMcp(req, res) {
@@ -184,6 +172,6 @@ app.listen(PORT, () => {
   console.log(`[shoptalk]   GET  /api/events   (SSE)`);
   console.log(`[shoptalk]   ALL  /mcp          (MCP streamable HTTP)`);
   if (!process.env.MCP_TOKEN) {
-    console.warn("[shoptalk] WARNING: MCP_TOKEN not set — /mcp is unauthenticated. Set it before exposing the backend publicly.");
+    console.warn("[shoptalk] WARNING: MCP_TOKEN not set — /mcp and /api/events accept LOCAL (loopback) requests only. Set MCP_TOKEN to allow remote clients like Poke.");
   }
 });

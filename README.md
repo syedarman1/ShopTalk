@@ -99,9 +99,10 @@ ShopTalk is a compact but production-shaped full-stack project. Highlights:
 - **Correctness details that matter** — sales windows are computed in the
   *store's own timezone* (so "today" means the merchant's today, not UTC); large
   result sets surface a "capped" flag instead of silently undercounting.
-- **Security-conscious** — read-only scopes only; the `/mcp` endpoint is gated by
-  a shared secret; `/internal/broadcast` is localhost-only; CORS is restricted;
-  credentials live only in environment variables, never in the repo.
+- **Security-conscious** — read-only scopes only; `/mcp` and the SSE stream
+  require a shared secret and **fail closed to loopback-only** when none is set;
+  `/internal/broadcast` is localhost-only; CORS is restricted; credentials live
+  only in environment variables, never in the repo.
 - **Tested & reviewed** — unit tests (Node's built-in runner) for the data layer,
   plus the project was put through multi-agent code review (a local pass and a
   cloud "ultrareview") whose findings — auth hardening, timezone correctness,
@@ -148,7 +149,8 @@ Create `backend/.env` (gitignored — never commit it):
 PORT=4000
 # Single-quote the value so Node's --env-file parser keeps it intact.
 SHOPIFY_STORES='[{"key":"main","label":"Main Store","shopDomain":"your-store.myshopify.com","clientId":"your_api_key","clientSecret":"shpss_xxx","apiVersion":"2026-01"}]'
-# Shared secret that protects /mcp (strongly recommended; required in production).
+# Shared secret for /mcp and the SSE stream. Without it, both accept loopback
+# (local) requests only — set it to allow remote clients like Poke.
 MCP_TOKEN=some-long-random-string
 ```
 ```bash
