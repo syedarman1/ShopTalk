@@ -25,8 +25,10 @@ store things the way they'd text a co-founder — "what's selling?", "any orders
 haven't shipped?", "who are my repeat customers?" — and get an answer in seconds,
 from their phone, without opening anything.
 
-It is intentionally **read-only and focused**. It's not a general analytics
-suite; it answers the handful of questions a merchant actually texts about.
+Today it's **read-only** — safe to text without ever changing your store — and
+focused on the questions merchants actually ask. It's built to grow: write
+actions (fulfilling orders, adjusting inventory) and richer analytics are the
+natural next steps.
 
 ---
 
@@ -73,15 +75,16 @@ queries Shopify and returns the data → Poke replies in plain English.
 | `search_products` | "Find my hoodie" / "what do I sell?" |
 | `search_customers` | "Who are my repeat customers?" |
 
-Every tool is **read-only** — ShopTalk cannot change, create, or delete anything
-in the store. That's enforced by the API permissions it requests, so a misread
-text can never modify your data.
+Every tool today is **read-only** — ShopTalk cannot change, create, or delete
+anything in the store, enforced by the API scopes it requests, so a misread text
+can never modify your data. Writes are a deliberate next step, added the same
+way: one new tool at a time, behind the same MCP interface.
 
 ---
 
 ## Under the hood
 
-ShopTalk is a compact but production-shaped full-stack project. Highlights:
+ShopTalk is a production-shaped full-stack project. Highlights:
 
 - **MCP server over streamable HTTP** — implements the Model Context Protocol so
   any MCP client (Poke, Claude, etc.) can use it. Stateless transport: a fresh
@@ -178,11 +181,14 @@ no tunnel, runs 24/7. Not serverless: the SSE stream needs a long-lived connecti
 
 ---
 
-## v1 limitations (intentional, documented — not bugs)
-- **Read-only.** No writes/mutations (write tools are a clean future addition).
-- `get_sales` reads one 250-order page per store (a `capped` flag surfaces overflow) and supports `today`/`7d`/`30d`.
-- No sales trend chart yet — `get_sales` returns the period total + order count.
-- `search_products` is text search / listing; true best-seller ranking by units sold is a future addition.
+## Roadmap
+
+ShopTalk starts read-only and safe by design — and it's built to grow. What's next:
+
+- **Write actions** — fulfilling orders, adjusting inventory, tagging customers. Read-only today; the tool layer adds each cleanly behind the same MCP interface.
+- **Deeper analytics** — sales trend charts and best-seller ranking by units sold (today `get_sales` returns the period total + order count).
+- **Flexible time ranges** — custom date ranges beyond the current `today` / `7d` / `30d`.
+- **Larger result windows** — paginate past the current single 250-order page (a `capped` flag already surfaces overflow).
 
 ## Tests
 ```bash
