@@ -1,5 +1,7 @@
 # ShopTalk
 
+![ShopTalk — text your Shopify store, demo with sample data](docs/shoptalk-demo.png)
+
 **Live demo:** <your-vercel-url> — a self-contained walkthrough with **sample data**
 (no real store, no backend). The real dashboard runs locally against your store.
 
