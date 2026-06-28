@@ -1,6 +1,7 @@
 "use client";
 import { ShoppingBag, Package, Users, Receipt, Store } from "lucide-react";
-import Sparkline from "./Sparkline";
+import RevenueChart from "./RevenueChart";
+import { pctChange } from "../lib/revenueChart.mjs";
 import { motion, AnimatePresence } from "framer-motion";
 
 const fmtMoney = (byCurrency) =>
@@ -16,19 +17,54 @@ function Empty() {
   );
 }
 
+function DeltaBadge({ pct }) {
+  if (pct == null) return null;
+  const up = pct >= 0;
+  return (
+    <span className={`inline-flex items-center gap-1 text-sm font-medium ${up ? "text-shopify-light" : "text-rose-400"}`}>
+      {up ? "▲" : "▼"} {Math.abs(pct).toFixed(0)}% vs yesterday
+    </span>
+  );
+}
+
 function Sales({ detail }) {
   // Single-store result has totalsByCurrency; rollup has combined + perStore.
   const rollup = detail.combined != null;
   const byCurrency = rollup ? detail.combined.byCurrency : detail.totalsByCurrency;
   const orderCount = rollup ? detail.combined.orderCount : detail.orderCount;
+  const points = detail.series?.points;
+  const hasChart = !rollup && Array.isArray(points) && points.length >= 2;
+
+  const cur = Object.keys(byCurrency || {})[0] || "USD";
+  const todayTotal = byCurrency?.[cur];
+  const prevTotal = detail.comparison?.totalsByCurrency?.[cur];
+  const pct = hasChart ? pctChange(todayTotal, prevTotal) : null;
+  const aov = detail.averageByCurrency?.[cur] ?? (orderCount ? (todayTotal || 0) / orderCount : null);
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <ShoppingBag className="h-4 w-4" /> Sales {rollup ? "(all stores)" : `— ${detail.store}`}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <ShoppingBag className="h-4 w-4" /> Total sales · {rollup ? "all stores · " : ""}Today
+        </div>
+        <DeltaBadge pct={pct} />
       </div>
-      <div className="text-3xl font-semibold">{fmtMoney(byCurrency)}</div>
-      <div className="text-sm text-muted-foreground">{orderCount} orders</div>
-      {detail.series && <Sparkline series={detail.series} />}
+
+      <div className="text-4xl font-semibold tracking-tight">{fmtMoney(byCurrency)}</div>
+
+      {hasChart && <RevenueChart points={points} currency={cur} />}
+
+      <div className="grid grid-cols-2 gap-4 border-t border-border/50 pt-4">
+        <div>
+          <div className="text-xs uppercase tracking-wide text-muted-foreground">Orders</div>
+          <div className="text-xl font-semibold">{orderCount ?? "—"}</div>
+        </div>
+        <div>
+          <div className="text-xs uppercase tracking-wide text-muted-foreground">Avg order value</div>
+          <div className="text-xl font-semibold">{aov != null ? `${aov.toFixed(2)} ${cur}` : "—"}</div>
+        </div>
+      </div>
+
       {rollup && (
         <ul className="mt-2 space-y-1 text-sm">
           {detail.perStore.map((s) => (
