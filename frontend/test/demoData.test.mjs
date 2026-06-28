@@ -21,12 +21,16 @@ test("every script step has a valid, ResultPanel-shaped event", () => {
   }
 });
 
-test("sales step carries totalsByCurrency, orderCount, and a sparkline series", () => {
+test("sales step carries totals, comparison, and an hourly points series", () => {
   const sales = DEMO_SCRIPT.find((s) => s.event.type === "sales");
   assert.ok(sales, "a sales step exists");
-  assert.equal(typeof sales.event.detail.orderCount, "number");
-  assert.ok(sales.event.detail.totalsByCurrency.USD > 0);
-  assert.ok(Array.isArray(sales.event.detail.series) && sales.event.detail.series.length >= 2);
+  const d = sales.event.detail;
+  assert.equal(typeof d.orderCount, "number");
+  assert.ok(d.totalsByCurrency.USD > 0);
+  assert.ok(d.comparison.totalsByCurrency.USD > 0);
+  assert.ok(Array.isArray(d.series.points) && d.series.points.length >= 2);
+  const p = d.series.points[0];
+  assert.ok(typeof p.label === "string" && typeof p.value === "number" && typeof p.prev === "number");
 });
 
 test("orders/products/customers details are arrays with the right fields", () => {
