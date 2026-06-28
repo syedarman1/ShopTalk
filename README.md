@@ -172,3 +172,7 @@ no tunnel, runs 24/7. Not serverless: the SSE stream needs a long-lived connecti
 ```bash
 cd backend && node --test
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE).
