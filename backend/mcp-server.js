@@ -1,4 +1,4 @@
-// mcp-server.js — standalone MockBase MCP server over stdio.
+// mcp-server.js — standalone ShopTalk MCP server over stdio.
 //
 // Thin wrapper: the tool definitions live in mcp-tools.js (shared with the
 // in-process HTTP endpoint in server.js). Here we wire them to the stdio
@@ -19,10 +19,10 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   // stdout is the MCP transport — all logs must go to stderr.
-  console.error("[mockbase-mcp] server ready on stdio");
+  console.error("[shoptalk-mcp] server ready on stdio");
 }
 
 main().catch((err) => {
-  console.error("[mockbase-mcp] fatal:", err);
+  console.error("[shoptalk-mcp] fatal:", err);
   process.exit(1);
 });

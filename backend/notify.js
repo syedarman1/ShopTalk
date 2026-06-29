@@ -1,8 +1,8 @@
 // notify.js — fire-and-forget bridge from the MCP process to the web backend.
-// After an MCP tool mutates the database, we POST the event to the Express
-// server's /internal/broadcast endpoint so it reaches the dashboard over SSE.
-// If the dashboard/server isn't running, the DB write still succeeded — we
-// just swallow the connection error.
+// After an MCP tool runs, we POST the event to the Express server's
+// /internal/broadcast endpoint so it can reach a dashboard over SSE.
+// If the dashboard/server isn't running, the tool result still returned fine —
+// we just swallow the connection error.
 
 const BROADCAST_URL =
   process.env.SHOPTALK_BROADCAST_URL ||
