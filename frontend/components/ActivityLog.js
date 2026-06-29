@@ -50,7 +50,7 @@ export default function ActivityLog({ activity }) {
 }
 
 // formatTime is a local helper (carried over from the original ActivityLog.js).
-// lib/utils.js exports only `cn` and `API_BASE` — it does NOT export formatTime.
+// lib/utils.js exports only `cn` — it does NOT export formatTime.
 function formatTime(ts) {
   if (!ts) return "";
   try {
