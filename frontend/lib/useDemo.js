@@ -54,7 +54,6 @@ export function useDemo() {
   const { chat, typing, latest, activity } = composeDemoState(history, current);
   return {
     activity,
-    status: "live",
     latest,
     stores: DEMO_STORES,
     chat,
