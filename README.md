@@ -53,8 +53,6 @@ So the flow is:
 
 ```
 You (iMessage)  ──>  Poke (AI assistant)  ──MCP──>  ShopTalk  ──>  Shopify Admin API
-                                                       │
-                                          live dashboard (SSE) shows each query
 ```
 
 You text Poke → Poke decides which ShopTalk tool answers your question → ShopTalk
@@ -91,9 +89,10 @@ ShopTalk is a production-shaped full-stack project. Highlights:
   ShopTalk uses the **OAuth client-credentials grant**: it exchanges an app's
   Client ID/Secret for a short-lived (24 h) access token, **caches it in
   memory per store, and auto-refreshes** before expiry and on a 401.
-- **Real-time dashboard** — a Next.js app subscribes to a **Server-Sent Events**
-  stream; every tool call the AI makes lights up the UI live (which store, what
-  was asked, the result).
+- **Interactive demo dashboard** — a self-contained Next.js app that renders each
+  tool's results (revenue chart, orders, products, customers) from **sample data**,
+  so anyone can see how a Poke conversation looks without a Shopify store. No
+  backend, no real data — your real numbers only ever go to Poke.
 - **Multi-store from day one** — a config-driven registry; queries run per store
   or roll up across all stores, grouping revenue by currency (never summing
   across mismatched currencies).
@@ -121,10 +120,11 @@ backend/
   shopify.js     Admin GraphQL client + OAuth token exchange/cache + read fns
   stores.js      multi-store registry (parses SHOPIFY_STORES)
   test/          unit tests (node --test)
-frontend/
-  app/page.js            live dashboard
-  components/            ResultPanel, ActivityLog, Header
-  lib/useShopTalk.js     SSE hook (activity, status, latest, stores)
+frontend/                self-contained demo (sample data, no backend)
+  app/page.js            demo dashboard
+  components/            ResultPanel, RevenueChart, PanelUI, ChatPanel, ActivityLog
+  lib/demoData.mjs       sample store + scripted Q&A
+  lib/useDemo.js         on-demand demo engine
 ```
 
 This started as **MockBase** (the same real-time MCP + dashboard backbone wired
@@ -156,7 +156,7 @@ MCP_TOKEN=some-long-random-string
 ```
 ```bash
 cd backend && npm install && node --env-file=.env server.js   # http://localhost:4000
-cd frontend && npm install && npm run dev                      # http://localhost:3000 (dashboard)
+cd frontend && npm install && npm run dev                      # http://localhost:3000 (demo, sample data)
 ```
 Sanity-check against your real store (read-only): `cd backend && node --env-file=.env smoke.js`
 
