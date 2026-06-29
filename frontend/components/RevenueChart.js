@@ -13,7 +13,13 @@ export default function RevenueChart({ points, currency = "USD" }) {
   const chart = buildRevenueChart(points, { width: VIEW_W, height: VIEW_H });
   if (!chart.linePath) return null;
 
-  const fmt = (v) => `${v.toLocaleString(undefined, { maximumFractionDigits: 0 })} ${currency}`;
+  const fmt = (v) => {
+    try {
+      return new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 0 }).format(v);
+    } catch {
+      return `${Math.round(v)} ${currency}`;
+    }
+  };
 
   function onMove(e) {
     const svg = svgRef.current;

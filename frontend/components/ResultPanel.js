@@ -6,9 +6,21 @@ import { PanelHeader, StatStrip, StatusPill, SplitBar, SpendBar } from "./PanelU
 import { summarizeOrders, summarizeProducts, summarizeCustomers, stockLevel } from "../lib/panelSummaries.mjs";
 import { motion, AnimatePresence } from "framer-motion";
 
+// Format an amount with its currency symbol + thousands separators (e.g. $2,480.00).
+// Falls back to "amount CODE" if the currency code isn't a valid ISO code.
+function money(amount, currency) {
+  const n = Number(amount);
+  if (!Number.isFinite(n)) return "—";
+  try {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(n);
+  } catch {
+    return `${n.toFixed(2)} ${currency}`;
+  }
+}
+
 const fmtMoney = (byCurrency) =>
   Object.entries(byCurrency || {})
-    .map(([cur, amt]) => `${Number(amt).toFixed(2)} ${cur}`)
+    .map(([cur, amt]) => money(amt, cur))
     .join(" · ") || "—";
 
 function Empty() {
@@ -63,7 +75,7 @@ function Sales({ detail }) {
         </div>
         <div>
           <div className="text-xs uppercase tracking-wide text-muted-foreground">Avg order value</div>
-          <div className="text-xl font-semibold">{aov != null ? `${aov.toFixed(2)} ${cur}` : "—"}</div>
+          <div className="text-xl font-semibold">{aov != null ? money(aov, cur) : "—"}</div>
         </div>
       </div>
 
@@ -106,7 +118,7 @@ function Orders({ orders }) {
           <li key={o.name} className="flex items-center gap-3 border-t border-border/50 py-2 text-sm">
             <span className="w-14 font-mono text-muted-foreground">{o.name}</span>
             <span className="flex-1 truncate">{o.customer ?? "—"}</span>
-            <span className="font-mono">{o.total != null ? `${o.total.toFixed(2)} ${o.currency}` : "—"}</span>
+            <span className="font-mono">{o.total != null ? money(o.total, o.currency) : "—"}</span>
             <span className="w-24 text-right">
               <StatusPill tone={o.fulfillmentStatus === "FULFILLED" ? "success" : o.fulfillmentStatus ? "warn" : "muted"}>
                 {fulfillLabel(o.fulfillmentStatus)}
@@ -143,7 +155,7 @@ function Products({ products }) {
                 <span className="truncate">{p.title}</span>
                 {p.status !== "ACTIVE" && <StatusPill tone="muted">Draft</StatusPill>}
               </span>
-              <span className="font-mono">{p.price != null ? `${p.price.toFixed(2)} ${p.currency}` : "—"}</span>
+              <span className="font-mono">{p.price != null ? money(p.price, p.currency) : "—"}</span>
               <span className="w-28 text-right"><StatusPill tone={tone}>{text}</StatusPill></span>
             </li>
           );
@@ -170,7 +182,7 @@ function Customers({ customers }) {
               <span className="w-5 text-center font-mono text-muted-foreground">{i + 1}</span>
               <span className="flex-1 truncate">{c.name}</span>
               <span className="text-muted-foreground">{c.orders ?? "—"} orders</span>
-              <span className="font-mono">{c.amountSpent != null ? `${c.amountSpent.toFixed(2)} ${c.currency}` : "—"}</span>
+              <span className="font-mono">{c.amountSpent != null ? money(c.amountSpent, c.currency) : "—"}</span>
             </div>
             <div className="pl-8"><SpendBar fraction={maxSpent ? (c.amountSpent || 0) / maxSpent : 0} /></div>
           </li>
