@@ -72,7 +72,7 @@ queries Shopify and returns the data → Poke replies in plain English.
 | `search_customers` | "Who are my repeat customers?" |
 
 Every tool today is **read-only** — ShopTalk cannot change, create, or delete
-anything in the store, enforced by the API scopes it requests, so a misread text
+anything in the store, enforced by the read-only scopes the app is granted, so a misread text
 can never modify your data. Writes are a deliberate next step, added the same
 way: one new tool at a time, behind the same MCP interface.
 
@@ -109,7 +109,7 @@ ShopTalk is a production-shaped full-stack project. Highlights:
   rollup accuracy, a retry bug — were all fixed and re-reviewed.
 
 **Stack:** Node 22 · Express · `@modelcontextprotocol/sdk` · Zod · Shopify Admin
-GraphQL · Next.js 14 / React 18 · Tailwind · deployed on Railway.
+GraphQL · Next.js 14 / React 18 · Tailwind. Backend deployable to Railway/Render/Fly; the demo is hosted on Vercel.
 
 **Architecture at a glance**
 
