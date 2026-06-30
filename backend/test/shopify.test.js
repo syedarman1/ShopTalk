@@ -76,6 +76,7 @@ test("summarizeSales sums revenue by currency and computes per-currency AOV", ()
   ]);
   assert.equal(r.orderCount, 3);
   assert.deepEqual(r.totalsByCurrency, { USD: 150, EUR: 20 });
+  assert.deepEqual(r.countByCurrency, { USD: 2, EUR: 1 });
   // AOV is per currency: USD = 150/2, EUR = 20/1 — not divided by the total count.
   assert.deepEqual(r.averageByCurrency, { USD: 75, EUR: 20 });
 });
@@ -106,13 +107,23 @@ test("summarizeSales handles an empty list without dividing by zero", () => {
   assert.deepEqual(r.averageByCurrency, {});
 });
 
-test("aggregateSales sums counts and groups totals by currency", () => {
+test("aggregateSales sums counts, groups totals, and computes per-currency AOV", () => {
   const result = aggregateSales([
-    { store: "main", orderCount: 2, totalsByCurrency: { USD: 100 } },
-    { store: "eu", orderCount: 3, totalsByCurrency: { USD: 50, EUR: 20 } },
+    { store: "main", orderCount: 2, totalsByCurrency: { USD: 100 }, countByCurrency: { USD: 2 } },
+    { store: "eu", orderCount: 3, totalsByCurrency: { USD: 50, EUR: 20 }, countByCurrency: { USD: 1, EUR: 2 } },
   ]);
   assert.equal(result.orderCount, 5);
   assert.deepEqual(result.byCurrency, { USD: 150, EUR: 20 });
+  // USD: 150 / (2+1) = 50 ; EUR: 20 / 2 = 10 — rollup AOV is per currency.
+  assert.deepEqual(result.averageByCurrency, { USD: 50, EUR: 10 });
+});
+
+test("aggregateSales tolerates a store missing countByCurrency (no crash, no AOV)", () => {
+  const r = aggregateSales([
+    { store: "main", orderCount: 2, totalsByCurrency: { USD: 100 } },
+  ]);
+  assert.deepEqual(r.byCurrency, { USD: 100 });
+  assert.deepEqual(r.averageByCurrency, {});
 });
 
 test("aggregateSales propagates the capped flag and lists capped stores", () => {

@@ -77,7 +77,7 @@ export function summarizeSales(orders) {
   for (const [cur, total] of Object.entries(totalsByCurrency)) {
     averageByCurrency[cur] = total / countByCurrency[cur];
   }
-  return { orderCount, totalsByCurrency, averageByCurrency };
+  return { orderCount, totalsByCurrency, countByCurrency, averageByCurrency };
 }
 
 /** Flatten a GraphQL product node. */
@@ -104,9 +104,15 @@ export function shapeCustomer(node) {
   };
 }
 
-/** Sum order counts and group revenue by currency across stores; track capped stores. */
+/**
+ * Sum order counts and group revenue by currency across stores; track capped
+ * stores; and compute per-currency average order value for the combined view
+ * (a currency's total ÷ its own order count across all stores) so the rollup
+ * reports AOV the same way single-store get_sales does.
+ */
 export function aggregateSales(perStore) {
   const byCurrency = {};
+  const countByCurrency = {};
   let orderCount = 0;
   const cappedStores = [];
   for (const s of perStore) {
@@ -115,8 +121,15 @@ export function aggregateSales(perStore) {
     for (const [cur, amt] of Object.entries(s.totalsByCurrency)) {
       byCurrency[cur] = (byCurrency[cur] || 0) + amt;
     }
+    for (const [cur, n] of Object.entries(s.countByCurrency || {})) {
+      countByCurrency[cur] = (countByCurrency[cur] || 0) + n;
+    }
   }
-  return { byCurrency, orderCount, capped: cappedStores.length > 0, cappedStores };
+  const averageByCurrency = {};
+  for (const [cur, total] of Object.entries(byCurrency)) {
+    if (countByCurrency[cur]) averageByCurrency[cur] = total / countByCurrency[cur];
+  }
+  return { byCurrency, orderCount, averageByCurrency, capped: cappedStores.length > 0, cappedStores };
 }
 
 // ---------- Network client ----------
@@ -245,24 +258,37 @@ export async function getSales(storeKey, period = "today") {
   });
   const orders = data.orders.edges.map((e) => shapeOrder(e.node));
   // Excludes test & cancelled orders so revenue reflects real sales.
-  const { orderCount, totalsByCurrency, averageByCurrency } = summarizeSales(orders);
+  const { orderCount, totalsByCurrency, countByCurrency, averageByCurrency } = summarizeSales(orders);
   return {
     store: store.key,
     label,
     orderCount,
     totalsByCurrency,
+    countByCurrency,
     averageByCurrency,
     capped: data.orders.pageInfo.hasNextPage, // true => more than 250 orders in period
   };
 }
 
-/** Sales rolled up across every configured store. */
+/**
+ * Sales rolled up across every configured store. Uses allSettled so one
+ * misconfigured store (expired token, uninstalled app, network blip) doesn't
+ * wipe out the whole rollup — healthy stores are still reported, and failed
+ * ones are surfaced in `failures` so the answer is honest about what's missing.
+ */
 export async function getSalesAllStores(period = "today") {
-  const perStore = await Promise.all(
-    getStores().map((store) => getSales(store.key, period))
+  const stores = getStores();
+  const settled = await Promise.allSettled(
+    stores.map((store) => getSales(store.key, period))
   );
+  const perStore = [];
+  const failures = [];
+  settled.forEach((res, i) => {
+    if (res.status === "fulfilled") perStore.push(res.value);
+    else failures.push({ store: stores[i].key, error: res.reason?.message || String(res.reason) });
+  });
   const combined = aggregateSales(perStore);
-  return { perStore, combined };
+  return { perStore, combined, failures };
 }
 
 /** Recent orders for one store, optionally filtered to unfulfilled. */
