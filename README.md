@@ -1,5 +1,7 @@
 # ShopTalk
 
+![CI](https://github.com/syedarman1/ShopTalk/actions/workflows/ci.yml/badge.svg)
+
 **Live demo:** **[shop-talk-pied.vercel.app](https://shop-talk-pied.vercel.app)** — a self-contained walkthrough with **sample data**
 (no real store, no backend). The real dashboard runs locally against your store.
 
