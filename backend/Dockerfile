@@ -1,4 +1,4 @@
-# ShopTalk backend — Express API + SSE + MCP (streamable HTTP) in one process.
+# ShopTalk backend — MCP over streamable HTTP (/mcp) + health check.
 FROM node:22-slim
 
 WORKDIR /app
@@ -12,6 +12,8 @@ COPY . .
 
 # Defaults; override in your host's dashboard.
 ENV PORT=4000
+# Keep Express in production mode (no stack traces in error responses).
+ENV NODE_ENV=production
 
 EXPOSE 4000
 CMD ["node", "server.js"]

@@ -83,6 +83,16 @@ app.post("/mcp", handleMcp);
 app.get("/mcp", handleMcp);
 app.delete("/mcp", handleMcp);
 
+// Malformed JSON hits the body parser before auth, and Express's default
+// handler echoes stack traces outside production — return clean JSON instead.
+app.use((err, _req, res, _next) => {
+  if (res.headersSent) return;
+  const invalidJson = err?.type === "entity.parse.failed";
+  res.status(invalidJson ? 400 : err?.status || 500).json({
+    error: invalidJson ? "invalid JSON" : "request failed",
+  });
+});
+
 app.listen(PORT, () => {
   console.log(`[shoptalk] MCP listening on http://localhost:${PORT}`);
   console.log(`[shoptalk]   GET  /api/health`);
