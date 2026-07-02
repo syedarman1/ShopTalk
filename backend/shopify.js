@@ -20,18 +20,27 @@ function startOfDayISO(now, timeZone) {
   for (const part of dtf.formatToParts(now)) p[part.type] = part.value;
   const hour = p.hour === "24" ? "00" : p.hour;
   const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, +hour, +p.minute, +p.second);
-  const offsetMs = asUTC - now.getTime(); // time-zone offset at `now`
+  // The formatter is second-precision, so compare against `now` truncated to
+  // whole seconds — otherwise sub-second input skews the offset (and the
+  // returned midnight) by the millisecond remainder.
+  const offsetMs = asUTC - Math.floor(now.getTime() / 1000) * 1000; // tz offset at `now`
   const localMidnightAsUTC = new Date(`${ymd}T00:00:00.000Z`).getTime();
   return new Date(localMidnightAsUTC - offsetMs).toISOString();
 }
 
-/** Map a named period to an ISO `since` timestamp relative to `now`, in `timeZone`. */
+/** Map a named period to an ISO time range relative to `now`, in `timeZone`. */
 export function periodToRange(period, now, timeZone = "UTC") {
   const startToday = startOfDayISO(now, timeZone);
   if (period === "today") return { since: startToday, label: "today" };
+  if (period === "yesterday") {
+    // 1ms before today's local midnight is an instant inside yesterday (local),
+    // so its local day-start is yesterday's midnight — DST-safe.
+    const since = startOfDayISO(new Date(Date.parse(startToday) - 1), timeZone);
+    return { since, until: startToday, label: "yesterday" };
+  }
   const days = { "7d": 7, "30d": 30 }[period];
   if (!days) {
-    throw new Error(`Unknown period "${period}". Use today, 7d, or 30d.`);
+    throw new Error(`Unknown period "${period}". Use today, yesterday, 7d, or 30d.`);
   }
   const since = new Date(Date.parse(startToday) - days * 24 * 60 * 60 * 1000).toISOString();
   return { since, label: `last ${days} days` };
@@ -245,7 +254,7 @@ const ORDER_FIELDS = `
 export async function getSales(storeKey, period = "today") {
   const store = resolveStore(storeKey);
   const timeZone = await getShopTimezone(store);
-  const { since, label } = periodToRange(period, new Date(), timeZone);
+  const { since, until, label } = periodToRange(period, new Date(), timeZone);
   const query = `
     query($q: String!) {
       orders(first: ${SALES_PAGE}, query: $q, sortKey: CREATED_AT, reverse: true) {
@@ -254,7 +263,7 @@ export async function getSales(storeKey, period = "today") {
       }
     }`;
   const data = await shopifyGraphQL(store, query, {
-    q: `created_at:>=${since}`,
+    q: `created_at:>=${since}` + (until ? ` created_at:<${until}` : ""),
   });
   const orders = data.orders.edges.map((e) => shapeOrder(e.node));
   // Excludes test & cancelled orders so revenue reflects real sales.

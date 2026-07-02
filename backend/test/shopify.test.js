@@ -14,6 +14,26 @@ test("periodToRange('7d') returns 7 days before now", () => {
   assert.equal(since, "2026-06-13T00:00:00.000Z");
 });
 
+test("periodToRange('yesterday') spans yesterday's local day (UTC)", () => {
+  const now = new Date("2026-06-20T15:30:00Z");
+  const r = periodToRange("yesterday", now);
+  assert.equal(r.since, "2026-06-19T00:00:00.000Z");
+  assert.equal(r.until, "2026-06-20T00:00:00.000Z");
+  assert.equal(r.label, "yesterday");
+});
+
+test("periodToRange('yesterday') honors a non-UTC timezone", () => {
+  const now = new Date("2026-06-25T04:00:00Z"); // midnight EDT
+  const r = periodToRange("yesterday", now, "America/New_York");
+  assert.equal(r.since, "2026-06-24T04:00:00.000Z");
+  assert.equal(r.until, "2026-06-25T04:00:00.000Z");
+});
+
+test("periodToRange('today') has no upper bound", () => {
+  const r = periodToRange("today", new Date("2026-06-20T15:30:00Z"));
+  assert.equal(r.until, undefined);
+});
+
 test("periodToRange rejects unknown period", () => {
   assert.throws(() => periodToRange("forever", new Date()), /period/i);
 });

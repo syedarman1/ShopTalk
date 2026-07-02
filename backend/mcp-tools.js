@@ -71,7 +71,7 @@ export function createMcpServer() {
       inputSchema: {
         store: z.string().optional().describe("Store key. Omit to roll up all stores."),
         period: z
-          .enum(["today", "7d", "30d"])
+          .enum(["today", "yesterday", "7d", "30d"])
           .optional()
           .describe("Time window (default today)."),
       },
