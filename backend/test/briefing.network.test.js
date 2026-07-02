@@ -38,9 +38,14 @@ function alphaRouter(url, init = {}) {
   const q = body?.variables?.q || "";
   if ((body.query || "").includes("ianaTimezone"))
     return json({ data: { shop: { ianaTimezone: "UTC" } } });
-  if (q.includes("fulfillment_status:unfulfilled")) return json(ORDERS_UNFUL);
+  if (q.includes("fulfillment_status:unfulfilled")) {
+    // "needs shipping" must include partially-fulfilled orders too
+    assert.match(q, /\(fulfillment_status:unfulfilled OR fulfillment_status:partial\)/);
+    return json(ORDERS_UNFUL);
+  }
   if (q.includes("created_at:>=")) {
-    assert.match(q, /created_at:>=.+ created_at:</); // yesterday = bounded range
+    // Shopify's search grammar requires datetime values to be quoted
+    assert.match(q, /created_at:>='.+' created_at:<'.+'/);
     return json(ORDERS_YDAY);
   }
   if (q.includes("inventory_total:<=")) {

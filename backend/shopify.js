@@ -155,6 +155,8 @@ export function aggregateSales(perStore) {
 
 const DEFAULT_LIMIT = 10;
 const SALES_PAGE = 250; // Admin API max per page; v1 reads one page.
+// "Needs shipping" = strictly unfulfilled OR partially fulfilled.
+const UNFULFILLED_FILTER = "(fulfillment_status:unfulfilled OR fulfillment_status:partial)";
 
 // ---- Access token (client credentials grant) ----
 // Shopify removed static admin tokens in 2026; exchange the app's
@@ -273,7 +275,9 @@ export async function getSales(storeKey, period = "today") {
       }
     }`;
   const data = await shopifyGraphQL(store, query, {
-    q: `created_at:>=${since}` + (until ? ` created_at:<${until}` : ""),
+    // Shopify's search grammar requires quoted datetime values (colons are
+    // special characters in unquoted tokens).
+    q: `created_at:>='${since}'` + (until ? ` created_at:<'${until}'` : ""),
   });
   const orders = data.orders.edges.map((e) => shapeOrder(e.node));
   // Excludes test & cancelled orders so revenue reflects real sales.
@@ -369,7 +373,9 @@ export async function getDailyBriefing({ storeKey, lowStockThreshold = 10 } = {}
 /** Recent orders for one store, optionally filtered to unfulfilled. */
 export async function getOrders(storeKey, { status, limit = DEFAULT_LIMIT } = {}) {
   const store = resolveStore(storeKey);
-  const filter = status === "unfulfilled" ? "fulfillment_status:unfulfilled" : null;
+  // "unfulfilled" from a merchant means "still needs shipping" — include
+  // partially-fulfilled orders, which still have unshipped line items.
+  const filter = status === "unfulfilled" ? UNFULFILLED_FILTER : null;
   const query = `
     query($q: String, $n: Int!) {
       orders(first: $n, query: $q, sortKey: CREATED_AT, reverse: true) {
