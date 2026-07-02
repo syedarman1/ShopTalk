@@ -11,7 +11,7 @@ process.env.SHOPIFY_STORES = JSON.stringify([
   { key: "beta", label: "Beta", shopDomain: "beta.myshopify.com", clientId: "id-b", clientSecret: "sec-b", apiVersion: "2026-01" },
 ]);
 
-const { getAccessToken, shopifyGraphQL, getSalesAllStores, getOrder } = await import("../shopify.js");
+const { getAccessToken, shopifyGraphQL, getSalesAllStores, getOrder, getShopTimezone } = await import("../shopify.js");
 
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json" } });
@@ -108,6 +108,32 @@ test("getOrder returns the exact-name match, not the top relevance hit", async (
   assert.equal(hit.order.total, 2);
   const miss = await getOrder("alpha", "999"); // no exact match in results
   assert.equal(miss.order, null);
+});
+
+test("getShopTimezone doesn't cache the UTC fallback after a transient failure", async (t) => {
+  let gql = 0;
+  t.mock.method(globalThis, "fetch", async (url) => {
+    if (String(url).includes("/oauth/access_token")) return json(TOKEN_OK);
+    gql += 1;
+    return gql === 1 ? json({}, 500) : json({ data: { shop: { ianaTimezone: "America/New_York" } } });
+  });
+  const store = fakeStore("t8");
+  assert.equal(await getShopTimezone(store), "UTC"); // transient failure → fallback
+  assert.equal(await getShopTimezone(store), "America/New_York"); // retried, real answer
+  assert.equal(await getShopTimezone(store), "America/New_York"); // now served from cache
+  assert.equal(gql, 2);
+});
+
+test("a tiny expires_in still yields a positive token-cache TTL", async (t) => {
+  let exchanges = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    exchanges += 1;
+    return json({ access_token: "tok", scope: "read_orders", expires_in: 10 });
+  });
+  const store = fakeStore("t9");
+  await getAccessToken(store);
+  await getAccessToken(store);
+  assert.equal(exchanges, 1); // floored TTL — not an instantly-expired entry
 });
 
 test("getSalesAllStores keeps healthy stores and reports failures", async (t) => {

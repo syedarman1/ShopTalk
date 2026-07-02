@@ -167,16 +167,16 @@ const tzCache = new Map(); // store.key -> IANA timezone string
 
 /** Fetch & cache the shop's IANA timezone; defaults to "UTC" on any failure. */
 export async function getShopTimezone(store) {
-  if (tzCache.has(store.key)) return tzCache.get(store.key);
-  let tz = "UTC";
+  const cached = tzCache.get(store.key);
+  if (cached) return cached;
   try {
     const data = await shopifyGraphQL(store, `{ shop { ianaTimezone } }`);
-    tz = data?.shop?.ianaTimezone || "UTC";
+    const tz = data?.shop?.ianaTimezone || "UTC";
+    tzCache.set(store.key, tz); // cache only real answers, never the fallback
+    return tz;
   } catch {
-    tz = "UTC";
+    return "UTC"; // fall back for this call; retry on the next one
   }
-  tzCache.set(store.key, tz);
-  return tz;
 }
 
 /** Get a valid Admin API access token for the store, exchanging/refreshing as needed. */
@@ -204,7 +204,7 @@ export async function getAccessToken(store) {
   }
   const json = await res.json();
   // Refresh a minute before the ~24h expiry to avoid edge-of-expiry failures.
-  const ttl = ((json.expires_in ?? 86399) - 60) * 1000;
+  const ttl = Math.max(30_000, ((json.expires_in ?? 86399) - 60) * 1000);
   tokenCache.set(store.key, { token: json.access_token, expiresAt: Date.now() + ttl });
   return json.access_token;
 }
