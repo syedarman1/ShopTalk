@@ -11,7 +11,7 @@ process.env.SHOPIFY_STORES = JSON.stringify([
   { key: "beta", label: "Beta", shopDomain: "beta.myshopify.com", clientId: "id-b", clientSecret: "sec-b", apiVersion: "2026-01" },
 ]);
 
-const { getAccessToken, shopifyGraphQL, getSalesAllStores } = await import("../shopify.js");
+const { getAccessToken, shopifyGraphQL, getSalesAllStores, getOrder } = await import("../shopify.js");
 
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json" } });
@@ -79,6 +79,35 @@ test("GraphQL-level errors are thrown with the API's message", async (t) => {
       : json({ errors: [{ message: "Field 'nope' doesn't exist" }] })
   );
   await assert.rejects(() => shopifyGraphQL(fakeStore("t5"), `{ nope }`), /Field 'nope' doesn't exist/);
+});
+
+test("a 200 response without data throws a clear error, not a TypeError", async (t) => {
+  t.mock.method(globalThis, "fetch", async (url) =>
+    String(url).includes("/oauth/access_token") ? json(TOKEN_OK) : json({})
+  );
+  await assert.rejects(() => shopifyGraphQL(fakeStore("t7"), `{ ok }`), /Empty GraphQL response/);
+});
+
+test("getOrder returns the exact-name match, not the top relevance hit", async (t) => {
+  const orderNode = (name, amount) => ({
+    name, createdAt: "2026-07-01T00:00:00Z", test: false, cancelledAt: null,
+    displayFulfillmentStatus: null, displayFinancialStatus: null,
+    currentTotalPriceSet: { shopMoney: { amount, currencyCode: "USD" } },
+    customer: null, lineItems: { edges: [] },
+  });
+  // Relevance puts #1001 first when searching "name:#100".
+  const two = { data: { orders: { edges: [
+    { node: orderNode("#1001", "1.00") },
+    { node: orderNode("#100", "2.00") },
+  ] } } };
+  t.mock.method(globalThis, "fetch", async (url) =>
+    String(url).includes("/oauth/access_token") ? json(TOKEN_OK) : json(two)
+  );
+  const hit = await getOrder("alpha", "100");
+  assert.equal(hit.order.name, "#100");
+  assert.equal(hit.order.total, 2);
+  const miss = await getOrder("alpha", "999"); // no exact match in results
+  assert.equal(miss.order, null);
 });
 
 test("getSalesAllStores keeps healthy stores and reports failures", async (t) => {

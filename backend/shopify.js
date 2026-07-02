@@ -251,6 +251,9 @@ export async function shopifyGraphQL(store, query, variables = {}) {
     if (json.errors?.length) {
       throw new Error(`GraphQL error for "${store.key}": ${json.errors[0].message}`);
     }
+    if (!json.data) {
+      throw new Error(`Empty GraphQL response for "${store.key}".`);
+    }
     return json.data;
   }
   throw new Error(`Shopify API for "${store.key}" failed after retries.`);
@@ -404,7 +407,7 @@ export async function getOrder(storeKey, name) {
   const clean = name.startsWith("#") ? name : `#${name}`;
   const query = `
     query($q: String!) {
-      orders(first: 1, query: $q) {
+      orders(first: 10, query: $q) {
         edges { node {
           ${ORDER_FIELDS}
           lineItems(first: 20) { edges { node { title quantity } } }
@@ -412,7 +415,8 @@ export async function getOrder(storeKey, name) {
       }
     }`;
   const data = await shopifyGraphQL(store, query, { q: `name:${clean}` });
-  const edge = data.orders.edges[0];
+  // name: is a token match ("#100" also hits "#1001"); require the exact order.
+  const edge = data.orders.edges.find((e) => e.node.name === clean);
   if (!edge) return { store: store.key, order: null };
   const order = shapeOrder(edge.node);
   order.lineItems = edge.node.lineItems.edges.map((e) => ({
