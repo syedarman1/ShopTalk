@@ -1,7 +1,4 @@
 node_modules/
-mockbase.db
-mockbase.db-wal
-mockbase.db-shm
 *.log
 .env
 .env.local

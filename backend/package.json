@@ -2,8 +2,9 @@
   "name": "shoptalk-backend",
   "version": "1.0.0",
   "private": true,
-  "description": "ShopTalk backend — Shopify Admin API + Express + SSE + MCP",
+  "description": "ShopTalk backend — Shopify Admin API + Express + MCP",
   "type": "module",
+  "engines": { "node": ">=22" },
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",

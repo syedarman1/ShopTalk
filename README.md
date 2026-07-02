@@ -3,7 +3,7 @@
 ![CI](https://github.com/syedarman1/ShopTalk/actions/workflows/ci.yml/badge.svg)
 
 **Live demo:** **[shop-talk-pied.vercel.app](https://shop-talk-pied.vercel.app)** — a self-contained walkthrough with **sample data**
-(no real store, no backend). The real dashboard runs locally against your store.
+(no real store, no backend). Your real store is reached only through Poke, over iMessage.
 
 **Text your Shopify store a question in plain English and get a real answer back — over iMessage.**
 
@@ -67,7 +67,7 @@ queries Shopify and returns the data → Poke replies in plain English.
 | Tool | The question it answers |
 |------|--------------------------|
 | `list_stores` | "Which stores are connected?" |
-| `get_sales` | "How much did I sell today / yesterday / this week / this month?" (revenue, orders, average order value — per store or all stores combined) |
+| `get_sales` | "How much did I sell today / yesterday / in the last 7 or 30 days?" (revenue, orders, average order value — per store or all stores combined) |
 | `get_daily_briefing` | "How's my store doing?" — yesterday's sales, unfulfilled orders, and low-stock items in one call (built for a scheduled morning text) |
 | `get_orders` | "Show my recent orders" / "anything unfulfilled?" |
 | `get_order` | "What's in order #1042?" |
@@ -119,7 +119,8 @@ GraphQL · Next.js 14 / React 18 · Tailwind. Backend deployable to Railway/Rend
 ```
 backend/
   server.js      Express: MCP-over-HTTP at /mcp (auth-gated) + /api/health
-  mcp-tools.js   the 6 read-only MCP tools (createMcpServer factory)
+  auth.js        /mcp shared-secret check (fails closed to loopback)
+  mcp-tools.js   the 7 read-only MCP tools (createMcpServer factory)
   shopify.js     Admin GraphQL client + OAuth token exchange/cache + read fns
   stores.js      multi-store registry (parses SHOPIFY_STORES)
   test/          unit tests (node --test)
@@ -204,7 +205,9 @@ ShopTalk starts read-only and safe by design — and it's built to grow. What's 
 ## Tests
 ```bash
 cd backend && node --test
+cd frontend && node --test 'test/**/*.mjs'
 ```
+CI runs both suites plus the frontend build on every push.
 
 ## License
 

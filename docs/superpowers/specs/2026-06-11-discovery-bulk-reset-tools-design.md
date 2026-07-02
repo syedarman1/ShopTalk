@@ -1,3 +1,7 @@
+> **Pre-fork MockBase history.** These tools belonged to the original MockBase
+> playground (a throwaway SQLite database); **none of them exist in ShopTalk**,
+> which is read-only by design.
+
 # MockBase discovery / bulk / schema-evolution / reset tools — design
 
 **Date:** 2026-06-11 · **Status:** approved
