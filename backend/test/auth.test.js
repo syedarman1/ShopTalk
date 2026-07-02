@@ -38,8 +38,8 @@ test("with a token, X-API-Key and X-ShopTalk-Token are accepted", () => {
   assert.equal(mcpAuthorized(mockReq({ headers: { "x-shoptalk-token": "s3cret" } }), "s3cret"), true);
 });
 
-test("with a token, ?token= is accepted (for EventSource which can't set headers)", () => {
-  assert.equal(mcpAuthorized(mockReq({ query: { token: "s3cret" } }), "s3cret"), true);
+test("query-string tokens are rejected (URLs leak into access logs)", () => {
+  assert.equal(mcpAuthorized(mockReq({ query: { token: "s3cret" } }), "s3cret"), false);
 });
 
 test("with a token, a wrong or missing secret is rejected even from loopback", () => {
