@@ -38,6 +38,8 @@ function alphaRouter(url, init = {}) {
   const q = body?.variables?.q || "";
   if ((body.query || "").includes("ianaTimezone"))
     return json({ data: { shop: { ianaTimezone: "UTC" } } });
+  if ((body.query || "").includes("ordersCount"))
+    return json({ data: { ordersCount: { count: 30 } } }); // true total, beyond the 10-order page
   if (q.includes("fulfillment_status:unfulfilled")) {
     // "needs shipping" must include partially-fulfilled orders too
     assert.match(q, /\(fulfillment_status:unfulfilled OR fulfillment_status:partial\)/);
@@ -83,7 +85,8 @@ test("getDailyBriefing bundles sales/unfulfilled/low stock; failures don't kill 
   assert.equal(s.store, "alpha");
   assert.equal(s.label, "Alpha");
   assert.deepEqual(s.sales.totalsByCurrency, { USD: 10 });
-  assert.equal(s.unfulfilled.count, 1);
+  assert.equal(s.unfulfilled.count, 30); // true total from ordersCount, not the page length
+  assert.equal(s.unfulfilled.orders.length, 1); // listed orders remain a preview
   assert.equal(s.unfulfilled.orders[0].name, "#42");
   assert.equal(s.lowStock.products.length, 1);
   assert.equal(r.failures.length, 1);

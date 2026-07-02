@@ -337,6 +337,16 @@ export async function getLowStock(storeKey, { threshold = 10, limit = 10 } = {})
   };
 }
 
+/** True count of orders matching a search query (not capped by page size). */
+async function countOrders(store, q) {
+  const data = await shopifyGraphQL(
+    store,
+    `query($q: String) { ordersCount(query: $q) { count } }`,
+    { q }
+  );
+  return data.ordersCount?.count ?? null;
+}
+
 /**
  * Morning-briefing bundle: yesterday's sales, unfulfilled orders, and
  * low-stock products — per store (all stores unless storeKey is given).
@@ -347,16 +357,18 @@ export async function getDailyBriefing({ storeKey, lowStockThreshold = 10 } = {}
   const stores = storeKey ? [resolveStore(storeKey)] : getStores();
   const settled = await Promise.allSettled(
     stores.map(async (store) => {
-      const [sales, orders, lowStock] = await Promise.all([
+      const [sales, orders, unfulfilledCount, lowStock] = await Promise.all([
         getSales(store.key, "yesterday"),
         getOrders(store.key, { status: "unfulfilled", limit: 10 }),
+        countOrders(store, UNFULFILLED_FILTER),
         getLowStock(store.key, { threshold: lowStockThreshold }),
       ]);
       return {
         store: store.key,
         label: store.label,
         sales,
-        unfulfilled: { count: orders.orders.length, orders: orders.orders },
+        // True total from ordersCount; the listed orders are a preview (≤10).
+        unfulfilled: { count: unfulfilledCount ?? orders.orders.length, orders: orders.orders },
         lowStock,
       };
     })
