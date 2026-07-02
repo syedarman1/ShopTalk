@@ -9,6 +9,7 @@ import { listStoreSummaries } from "./stores.js";
 import {
   getSales,
   getSalesAllStores,
+  getDailyBriefing,
   getOrders,
   getOrder,
   searchProducts,
@@ -83,6 +84,37 @@ export function createMcpServer() {
           return text(r);
         }
         const r = await getSalesAllStores(period);
+        return text(r);
+      } catch (err) {
+        return errorText(err.message);
+      }
+    }
+  );
+
+  // get_daily_briefing ------------------------------------------------------
+  server.registerTool(
+    "get_daily_briefing",
+    {
+      title: "Daily Briefing",
+      description:
+        "Morning summary for the merchant: yesterday's sales (revenue, orders, " +
+        "AOV), orders still unfulfilled, and low-stock products — per store. " +
+        "Use it for scheduled morning check-ins or when asked \"how's my store " +
+        "doing?\". Read-only.",
+      inputSchema: {
+        store: z.string().optional().describe("Store key (all stores if omitted)."),
+        lowStockThreshold: z
+          .number()
+          .int()
+          .min(1)
+          .max(500)
+          .optional()
+          .describe("Inventory at/below this counts as low stock (default 10)."),
+      },
+    },
+    async ({ store, lowStockThreshold }) => {
+      try {
+        const r = await getDailyBriefing({ storeKey: store, lowStockThreshold });
         return text(r);
       } catch (err) {
         return errorText(err.message);

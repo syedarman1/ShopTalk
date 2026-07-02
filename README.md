@@ -47,7 +47,7 @@ an outside tool or data source in a consistent way. A program that speaks MCP
 exposes a set of **tools** the AI can call. Poke acts as an **MCP host**: you add
 an integration (a built-in "recipe" or any custom MCP server URL), Poke
 discovers the tools that server exposes, and it calls them when a text needs one.
-**ShopTalk is one such custom MCP server** — it exposes six read-only tools
+**ShopTalk is one such custom MCP server** — it exposes seven read-only tools
 backed by the Shopify Admin API, and Poke is the client that calls them when you
 text a question about your store.
 
@@ -62,12 +62,13 @@ queries Shopify and returns the data → Poke replies in plain English.
 
 ---
 
-## What you can ask (the six tools)
+## What you can ask (the seven tools)
 
 | Tool | The question it answers |
 |------|--------------------------|
 | `list_stores` | "Which stores are connected?" |
-| `get_sales` | "How much did I sell today / this week / this month?" (revenue, orders, average order value — per store or all stores combined) |
+| `get_sales` | "How much did I sell today / yesterday / this week / this month?" (revenue, orders, average order value — per store or all stores combined) |
+| `get_daily_briefing` | "How's my store doing?" — yesterday's sales, unfulfilled orders, and low-stock items in one call (built for a scheduled morning text) |
 | `get_orders` | "Show my recent orders" / "anything unfulfilled?" |
 | `get_order` | "What's in order #1042?" |
 | `search_products` | "Find my hoodie" / "what do I sell?" |
@@ -171,7 +172,17 @@ npx poke@latest mcp add http://localhost:4000/mcp -n ShopTalk -k <MCP_TOKEN>   #
 …or from Poke's web app (**Integrations → New**): paste the MCP Server URL and the
 key. Either way Poke sends the key as an `Authorization: Bearer <token>` header on
 every request, which ShopTalk validates against `MCP_TOKEN`; on connect it
-discovers the six tools automatically. Then just text Poke a question.
+discovers the tools automatically. Then just text Poke a question.
+
+### 4. Optional: a morning briefing text
+Poke can run scheduled automations. Once ShopTalk is connected, text Poke:
+
+> "Every morning at 9, send me my ShopTalk daily briefing."
+
+Poke will call `get_daily_briefing` on schedule and text you yesterday's sales,
+anything unfulfilled, and what's running low on stock. **Opt-in by design:**
+ShopTalk never sends anything on its own — no automation, no messages. You can
+also just ask *"how's my store doing?"* any time.
 
 ### Deploy (always-on)
 Deploy `backend/` to Railway/Render/Fly (Dockerfile included). Set `SHOPIFY_STORES`
@@ -187,7 +198,7 @@ ShopTalk starts read-only and safe by design — and it's built to grow. What's 
 
 - **Write actions** — fulfilling orders, adjusting inventory, tagging customers. Read-only today; the tool layer adds each cleanly behind the same MCP interface.
 - **Deeper analytics** — sales trend charts and best-seller ranking by units sold (today `get_sales` returns the period total + order count).
-- **Flexible time ranges** — custom date ranges beyond the current `today` / `7d` / `30d`.
+- **Flexible time ranges** — custom date ranges beyond the current `today` / `yesterday` / `7d` / `30d`.
 - **Larger result windows** — paginate past the current single 250-order page (a `capped` flag already surfaces overflow).
 
 ## Tests
