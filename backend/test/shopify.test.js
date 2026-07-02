@@ -29,6 +29,36 @@ test("periodToRange('yesterday') honors a non-UTC timezone", () => {
   assert.equal(r.until, "2026-06-25T04:00:00.000Z");
 });
 
+test("periodToRange handles DST spring-forward (NY, Mar 2026)", () => {
+  // Mar 8 2026: clocks spring forward; local midnight is 05:00Z (EST).
+  const r1 = periodToRange("today", new Date("2026-03-08T15:00:00Z"), "America/New_York");
+  assert.equal(r1.since, "2026-03-08T05:00:00.000Z");
+  // Mar 9: yesterday = Mar 8, which started 05:00Z and ended 04:00Z Mar 9 (23h day).
+  const r2 = periodToRange("yesterday", new Date("2026-03-09T12:00:00Z"), "America/New_York");
+  assert.equal(r2.since, "2026-03-08T05:00:00.000Z");
+  assert.equal(r2.until, "2026-03-09T04:00:00.000Z");
+});
+
+test("periodToRange handles DST fall-back (NY, Nov 2026)", () => {
+  // Nov 1 2026: clocks fall back; local midnight is 04:00Z (EDT); Nov 2's is 05:00Z (EST).
+  const r1 = periodToRange("today", new Date("2026-11-01T12:00:00Z"), "America/New_York");
+  assert.equal(r1.since, "2026-11-01T04:00:00.000Z");
+  // On Nov 1, yesterday = Oct 31 — NOT a one-hour slice of today.
+  const r2 = periodToRange("yesterday", new Date("2026-11-01T12:00:00Z"), "America/New_York");
+  assert.equal(r2.since, "2026-10-31T04:00:00.000Z");
+  assert.equal(r2.until, "2026-11-01T04:00:00.000Z");
+  // Nov 2: yesterday = Nov 1, the 25-hour day.
+  const r3 = periodToRange("yesterday", new Date("2026-11-02T12:00:00Z"), "America/New_York");
+  assert.equal(r3.since, "2026-11-01T04:00:00.000Z");
+  assert.equal(r3.until, "2026-11-02T05:00:00.000Z");
+});
+
+test("periodToRange('7d') lands on a local midnight across DST", () => {
+  // Mar 12 minus 7 calendar days = Mar 5, midnight EST = 05:00Z (not 04:00Z-drifted).
+  const r = periodToRange("7d", new Date("2026-03-12T12:00:00Z"), "America/New_York");
+  assert.equal(r.since, "2026-03-05T05:00:00.000Z");
+});
+
 test("periodToRange('today') has no upper bound", () => {
   const r = periodToRange("today", new Date("2026-06-20T15:30:00Z"));
   assert.equal(r.until, undefined);

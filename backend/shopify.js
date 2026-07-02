@@ -6,26 +6,37 @@ import { resolveStore, getStores } from "./stores.js";
 
 // ---------- Pure helpers (network-free) ----------
 
-// UTC ISO string for the start of `now`'s calendar day in the given IANA time zone.
-function startOfDayISO(now, timeZone) {
-  const ymd = new Intl.DateTimeFormat("en-CA", {
-    timeZone, year: "numeric", month: "2-digit", day: "2-digit",
-  }).format(now); // e.g. "2026-06-25"
+// Offset of `timeZone` from UTC at `instant`, in ms. The formatter is
+// second-precision, so compare against `instant` truncated to whole seconds —
+// otherwise sub-second input skews the offset by the millisecond remainder.
+function tzOffsetMs(instant, timeZone) {
   const dtf = new Intl.DateTimeFormat("en-US", {
     timeZone, hour12: false,
     year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", second: "2-digit",
   });
   const p = {};
-  for (const part of dtf.formatToParts(now)) p[part.type] = part.value;
+  for (const part of dtf.formatToParts(instant)) p[part.type] = part.value;
   const hour = p.hour === "24" ? "00" : p.hour;
   const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, +hour, +p.minute, +p.second);
-  // The formatter is second-precision, so compare against `now` truncated to
-  // whole seconds — otherwise sub-second input skews the offset (and the
-  // returned midnight) by the millisecond remainder.
-  const offsetMs = asUTC - Math.floor(now.getTime() / 1000) * 1000; // tz offset at `now`
-  const localMidnightAsUTC = new Date(`${ymd}T00:00:00.000Z`).getTime();
-  return new Date(localMidnightAsUTC - offsetMs).toISOString();
+  return asUTC - Math.floor(instant.getTime() / 1000) * 1000;
+}
+
+// UTC ISO string for local midnight of the calendar day `daysAgo` days before
+// `now`'s calendar day in the given IANA time zone. The offset is resolved by
+// fixed-point iteration AT the target midnight (not at `now`), so day
+// boundaries stay correct across DST transitions; `daysAgo` uses calendar
+// arithmetic (Date.UTC handles month/year rollover), not 24h multiples.
+function startOfDayISO(now, timeZone, daysAgo = 0) {
+  const ymd = new Intl.DateTimeFormat("en-CA", {
+    timeZone, year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(now); // e.g. "2026-06-25"
+  const [y, m, d] = ymd.split("-").map(Number);
+  const targetUTC = Date.UTC(y, m - 1, d - daysAgo);
+  let guess = targetUTC - tzOffsetMs(new Date(targetUTC), timeZone);
+  guess = targetUTC - tzOffsetMs(new Date(guess), timeZone); // re-anchor at candidate midnight
+  guess = targetUTC - tzOffsetMs(new Date(guess), timeZone); // fixed point
+  return new Date(guess).toISOString();
 }
 
 /** Map a named period to an ISO time range relative to `now`, in `timeZone`. */
@@ -33,17 +44,16 @@ export function periodToRange(period, now, timeZone = "UTC") {
   const startToday = startOfDayISO(now, timeZone);
   if (period === "today") return { since: startToday, label: "today" };
   if (period === "yesterday") {
-    // 1ms before today's local midnight is an instant inside yesterday (local),
-    // so its local day-start is yesterday's midnight — DST-safe.
-    const since = startOfDayISO(new Date(Date.parse(startToday) - 1), timeZone);
+    const since = startOfDayISO(now, timeZone, 1);
     return { since, until: startToday, label: "yesterday" };
   }
   const days = { "7d": 7, "30d": 30 }[period];
   if (!days) {
     throw new Error(`Unknown period "${period}". Use today, yesterday, 7d, or 30d.`);
   }
-  const since = new Date(Date.parse(startToday) - days * 24 * 60 * 60 * 1000).toISOString();
-  return { since, label: `last ${days} days` };
+  // Calendar days back to a real local midnight (not now - N*24h, which drifts
+  // an hour across DST transitions).
+  return { since: startOfDayISO(now, timeZone, days), label: `last ${days} days` };
 }
 
 /** Flatten a GraphQL order node into a clean object. */
