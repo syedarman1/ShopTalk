@@ -300,6 +300,62 @@ export async function getSalesAllStores(period = "today") {
   return { perStore, combined, failures };
 }
 
+/** Active products at/below a stock threshold, lowest inventory first. */
+export async function getLowStock(storeKey, { threshold = 10, limit = 10 } = {}) {
+  const store = resolveStore(storeKey);
+  const gql = `
+    query($q: String!, $n: Int!) {
+      products(first: $n, query: $q, sortKey: INVENTORY_TOTAL) {
+        edges { node {
+          title status totalInventory
+          priceRangeV2 { minVariantPrice { amount currencyCode } }
+        } }
+      }
+    }`;
+  const data = await shopifyGraphQL(store, gql, {
+    q: `status:active inventory_total:<=${threshold}`,
+    n: limit,
+  });
+  return {
+    store: store.key,
+    threshold,
+    products: data.products.edges.map((e) => shapeProduct(e.node)),
+  };
+}
+
+/**
+ * Morning-briefing bundle: yesterday's sales, unfulfilled orders, and
+ * low-stock products — per store (all stores unless storeKey is given).
+ * Store-level failures don't kill the briefing; they surface in `failures`.
+ * Read-only and pull-only: nothing here schedules or sends anything.
+ */
+export async function getDailyBriefing({ storeKey, lowStockThreshold = 10 } = {}) {
+  const stores = storeKey ? [resolveStore(storeKey)] : getStores();
+  const settled = await Promise.allSettled(
+    stores.map(async (store) => {
+      const [sales, orders, lowStock] = await Promise.all([
+        getSales(store.key, "yesterday"),
+        getOrders(store.key, { status: "unfulfilled", limit: 10 }),
+        getLowStock(store.key, { threshold: lowStockThreshold }),
+      ]);
+      return {
+        store: store.key,
+        label: store.label,
+        sales,
+        unfulfilled: { count: orders.orders.length, orders: orders.orders },
+        lowStock,
+      };
+    })
+  );
+  const perStore = [];
+  const failures = [];
+  settled.forEach((res, i) => {
+    if (res.status === "fulfilled") perStore.push(res.value);
+    else failures.push({ store: stores[i].key, error: res.reason?.message || String(res.reason) });
+  });
+  return { period: "yesterday", stores: perStore, failures };
+}
+
 /** Recent orders for one store, optionally filtered to unfulfilled. */
 export async function getOrders(storeKey, { status, limit = DEFAULT_LIMIT } = {}) {
   const store = resolveStore(storeKey);
