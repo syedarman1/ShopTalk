@@ -51,7 +51,8 @@ function alphaRouter(url, init = {}) {
     return json(ORDERS_YDAY);
   }
   if (q.includes("inventory_total:<=")) {
-    assert.match(q, /status:active inventory_total:<=10/);
+    // Untracked-inventory products (gift cards, services) must not count as "low".
+    assert.match(q, /status:active tracks_inventory:true inventory_total:<=10/);
     return json(PRODUCTS_LOW);
   }
   throw new Error(`unrouted alpha query: ${q}`);

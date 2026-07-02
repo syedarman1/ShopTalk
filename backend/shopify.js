@@ -330,7 +330,9 @@ export async function getLowStock(storeKey, { threshold = 10, limit = 10 } = {})
       }
     }`;
   const data = await shopifyGraphQL(store, gql, {
-    q: `status:active inventory_total:<=${threshold}`,
+    // tracks_inventory:true keeps gift cards/services (untracked, total 0) out.
+    // Number() coercion: defense-in-depth for the interpolated value.
+    q: `status:active tracks_inventory:true inventory_total:<=${Number(threshold)}`,
     n: limit,
   });
   return {
