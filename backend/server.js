@@ -1,20 +1,14 @@
-// server.js — ShopTalk web backend.
-// Serves the REST API the dashboard reads from, and owns the Server-Sent
-// Events stream that pushes live updates to every connected browser. The MCP
-// process (mcp-server.js) calls the Shopify Admin API and then pings
-// POST /internal/broadcast so those mutations show up in the UI instantly.
+// server.js — ShopTalk backend: the MCP endpoint Poke talks to.
+// Express serves streamable-HTTP MCP at /mcp (auth-gated) plus a health check.
 
 import express from "express";
-import cors from "cors";
-import { listStoreSummaries } from "./stores.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createMcpServer } from "./mcp-tools.js";
-import { mcpAuthorized, isLoopback } from "./auth.js";
+import { mcpAuthorized } from "./auth.js";
 
 const PORT = process.env.PORT || 4000;
 const app = express();
 
-app.use(cors({ origin: process.env.CORS_ORIGIN || "http://localhost:3000" }));
 app.use(express.json());
 
 // Tolerate clients/tunnels that prefix the path with a per-session UUID
@@ -30,96 +24,19 @@ app.use((req, _res, next) => {
 });
 
 // ---------------------------------------------------------------------------
-// SSE broadcaster
-// ---------------------------------------------------------------------------
-
-/** @type {Set<import('express').Response>} */
-const clients = new Set();
-
-function broadcast(event) {
-  const payload = {
-    timestamp: new Date().toISOString(),
-    ...event,
-  };
-  const frame = `data: ${JSON.stringify(payload)}\n\n`;
-  for (const res of clients) {
-    res.write(frame);
-  }
-  return payload;
-}
-
-app.get("/api/events", (req, res) => {
-  // The SSE stream carries tool results (incl. customer data), so gate it like
-  // /mcp. Browsers can't set headers on EventSource, so the dashboard passes the
-  // token as ?token=... When MCP_TOKEN is unset, only loopback is allowed.
-  if (!mcpAuthorized(req)) return res.status(401).json({ error: "unauthorized" });
-  res.set({
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache, no-transform",
-    Connection: "keep-alive",
-    // Let proxies/Nginx know not to buffer.
-    "X-Accel-Buffering": "no",
-  });
-  res.flushHeaders?.();
-
-  clients.add(res);
-  // Greet the client so the hook can flip to "connected".
-  res.write(
-    `data: ${JSON.stringify({
-      type: "connected",
-      message: "Live stream connected",
-      timestamp: new Date().toISOString(),
-    })}\n\n`
-  );
-
-  // Keep the connection alive through idle proxies. A real event (not an SSE
-  // comment) so the browser surfaces it — the dashboard uses it as a heartbeat
-  // to detect zombie connections and show a truthful online/offline status.
-  const keepAlive = setInterval(
-    () => res.write(`data: ${JSON.stringify({ type: "ping" })}\n\n`),
-    25000
-  );
-
-  req.on("close", () => {
-    clearInterval(keepAlive);
-    clients.delete(res);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// REST API
+// Health check
 // ---------------------------------------------------------------------------
 
 app.get("/api/health", (_req, res) => {
-  res.json({ ok: true, clients: clients.size });
-});
-
-app.get("/api/stores", (_req, res) => {
-  try {
-    res.json({ stores: listStoreSummaries() });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Internal hook the MCP process calls after a successful tool run. Not meant
-// for browsers — it simply fans the event out to all SSE clients.
-app.post("/internal/broadcast", (req, res) => {
-  if (!isLoopback(req)) {
-    return res.status(403).json({ error: "forbidden" });
-  }
-  const event = req.body || {};
-  const payload = broadcast(event);
-  res.json({ ok: true, delivered: clients.size, payload });
+  res.json({ ok: true });
 });
 
 // ---------------------------------------------------------------------------
 // MCP endpoint (streamable HTTP)
 // ---------------------------------------------------------------------------
-// Lets a remote MCP client like Poke drive the database directly, in-process —
+// Lets a remote MCP client like Poke call the tools directly, in-process —
 // no stdio bridge, no supergateway, no tunnel-side proxy. Stateless: a fresh
-// MCP server + transport per request (no sessions, nothing spawned), and tool
-// mutations broadcast straight to the SSE clients above.
+// MCP server + transport per request (no sessions, nothing spawned).
 // @hono/node-server (used by the SDK transport) builds the Web Request from
 // req.rawHeaders, so to override Accept we must rewrite that raw array — not
 // just req.headers.
@@ -145,7 +62,7 @@ async function handleMcp(req, res) {
   // The streamable-HTTP transport requires both types in Accept; force it so
   // clients that send */* or application/json alone aren't rejected with 406.
   forceAccept(req);
-  const server = createMcpServer(broadcast);
+  const server = createMcpServer();
   const transport = new StreamableHTTPServerTransport({
     sessionIdGenerator: undefined, // stateless
   });
@@ -167,11 +84,10 @@ app.get("/mcp", handleMcp);
 app.delete("/mcp", handleMcp);
 
 app.listen(PORT, () => {
-  console.log(`[shoptalk] API + SSE listening on http://localhost:${PORT}`);
-  console.log(`[shoptalk]   GET  /api/stores`);
-  console.log(`[shoptalk]   GET  /api/events   (SSE)`);
-  console.log(`[shoptalk]   ALL  /mcp          (MCP streamable HTTP)`);
+  console.log(`[shoptalk] MCP listening on http://localhost:${PORT}`);
+  console.log(`[shoptalk]   GET  /api/health`);
+  console.log(`[shoptalk]   ALL  /mcp   (MCP streamable HTTP)`);
   if (!process.env.MCP_TOKEN) {
-    console.warn("[shoptalk] WARNING: MCP_TOKEN not set — /mcp and /api/events accept LOCAL (loopback) requests only. Set MCP_TOKEN to allow remote clients like Poke.");
+    console.warn("[shoptalk] WARNING: MCP_TOKEN not set — /mcp accepts LOCAL (loopback) requests only. Set MCP_TOKEN to allow remote clients like Poke.");
   }
 });

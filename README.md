@@ -99,10 +99,10 @@ ShopTalk is a production-shaped full-stack project. Highlights:
 - **Correctness details that matter** — sales windows are computed in the
   *store's own timezone* (so "today" means the merchant's today, not UTC); large
   result sets surface a "capped" flag instead of silently undercounting.
-- **Security-conscious** — read-only scopes only; `/mcp` and the SSE stream
-  require a shared secret and **fail closed to loopback-only** when none is set;
-  `/internal/broadcast` is localhost-only; CORS is restricted; credentials live
-  only in environment variables, never in the repo.
+- **Security-conscious** — read-only scopes only; `/mcp` requires a shared
+  secret and **fails closed to loopback-only** when none is set; credentials
+  live only in environment variables, never in the repo; the backend surface is
+  deliberately tiny (the MCP endpoint plus a health check).
 - **Tested & reviewed** — unit tests (Node's built-in runner) for the data layer,
   plus the project was put through multi-agent code review (a local pass and a
   cloud "ultrareview") whose findings — auth hardening, timezone correctness,
@@ -115,7 +115,7 @@ GraphQL · Next.js 14 / React 18 · Tailwind. Backend deployable to Railway/Rend
 
 ```
 backend/
-  server.js      Express: REST + SSE + MCP-over-HTTP at /mcp (auth-gated)
+  server.js      Express: MCP-over-HTTP at /mcp (auth-gated) + /api/health
   mcp-tools.js   the 6 read-only MCP tools (createMcpServer factory)
   shopify.js     Admin GraphQL client + OAuth token exchange/cache + read fns
   stores.js      multi-store registry (parses SHOPIFY_STORES)
@@ -150,8 +150,8 @@ Create `backend/.env` (gitignored — never commit it):
 PORT=4000
 # Single-quote the value so Node's --env-file parser keeps it intact.
 SHOPIFY_STORES='[{"key":"main","label":"Main Store","shopDomain":"your-store.myshopify.com","clientId":"your_api_key","clientSecret":"shpss_xxx","apiVersion":"2026-01"}]'
-# Shared secret for /mcp and the SSE stream. Without it, both accept loopback
-# (local) requests only — set it to allow remote clients like Poke.
+# Shared secret for /mcp. Without it, the endpoint accepts loopback (local)
+# requests only — set it to allow remote clients like Poke.
 MCP_TOKEN=some-long-random-string
 ```
 ```bash
@@ -173,9 +173,9 @@ discovers the six tools automatically. Then just text Poke a question.
 
 ### Deploy (always-on)
 Deploy `backend/` to Railway/Render/Fly (Dockerfile included). Set `SHOPIFY_STORES`
-and `MCP_TOKEN` as host env vars (and `CORS_ORIGIN` to your dashboard URL if you
-deploy the frontend). Point Poke at `https://<host>/mcp` with `-k <MCP_TOKEN>` —
-no tunnel, runs 24/7. Not serverless: the SSE stream needs a long-lived connection.
+and `MCP_TOKEN` as host env vars. Point Poke at `https://<host>/mcp` with
+`-k <MCP_TOKEN>` — no tunnel, runs 24/7. Prefer an always-on host: MCP responses
+stream over long-lived HTTP connections.
 
 ---
 
