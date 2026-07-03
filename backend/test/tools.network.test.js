@@ -30,37 +30,47 @@ test("runReadQuery passes read queries through and returns data", async (t) => {
   assert.deepEqual(await runReadQuery("alpha", `{ shop { name } }`), { shop: { name: "Alpha" } });
 });
 
-const DISPUTES = { data: { shopifyPaymentsAccount: { disputes: { edges: [
-  { node: { id: "gid://1", status: "NEEDS_RESPONSE", type: "CHARGEBACK",
-    evidenceDueBy: "2026-07-10T00:00:00Z", initiatedAt: "2026-07-01T00:00:00Z",
-    amount: { amount: "45.00", currencyCode: "USD" },
-    reasonDetails: { reason: "fraudulent", networkReasonCode: "4837" },
-    order: { name: "#1042" } } },
-  { node: { id: "gid://2", status: "WON", type: "CHARGEBACK",
-    evidenceDueBy: null, initiatedAt: "2026-06-01T00:00:00Z",
-    amount: { amount: "20.00", currencyCode: "USD" },
-    reasonDetails: { reason: "product_not_received", networkReasonCode: null },
-    order: { name: "#0999" } } },
-] } } } };
-
-test("getDisputes shapes disputes and filters to open by default", async (t) => {
-  t.mock.method(globalThis, "fetch", tokenOr(() => json(DISPUTES)));
-  const open = await getDisputes("alpha");
-  assert.equal(open.disputes.length, 1);
-  assert.deepEqual(open.disputes[0], {
-    id: "gid://1", order: "#1042", amount: 45, currency: "USD",
-    reason: "fraudulent", networkReasonCode: "4837", status: "NEEDS_RESPONSE",
-    type: "CHARGEBACK", evidenceDueBy: "2026-07-10T00:00:00Z", initiatedAt: "2026-07-01T00:00:00Z",
-  });
-  const all = await getDisputes("alpha", { status: "all" });
-  assert.equal(all.disputes.length, 2);
+const orderNode = (name, createdAt, amount, disputes = []) => ({
+  node: { name, createdAt, currentTotalPriceSet: { shopMoney: { amount, currencyCode: "USD" } }, disputes },
 });
 
-test("getDisputes handles a store without Shopify Payments", async (t) => {
-  t.mock.method(globalThis, "fetch", tokenOr(() => json({ data: { shopifyPaymentsAccount: null } })));
-  const r = await getDisputes("alpha");
-  assert.deepEqual(r.disputes, []);
-  assert.match(r.note, /No Shopify Payments/);
+test("getDisputes sweeps order pages, follows cursors, filters to open", async (t) => {
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", tokenOr((u, init) => {
+    const body = JSON.parse(String(init.body));
+    if ((body.query || "").includes("ianaTimezone")) return json({ data: { shop: { ianaTimezone: "UTC" } } });
+    assert.match(body.variables.q, /created_at:>='.+'/);
+    calls += 1;
+    if (calls === 1) return json({ data: { orders: { edges: [
+      orderNode("#2225", "2026-07-03T00:00:00Z", "42.98"),
+      orderNode("#2176", "2026-06-17T00:00:00Z", "42.98", [{ id: "gid://d1", status: "NEEDS_RESPONSE", initiatedAs: "CHARGEBACK" }]),
+    ], pageInfo: { hasNextPage: true, endCursor: "c1" } } } });
+    assert.equal(body.variables.after, "c1");
+    return json({ data: { orders: { edges: [
+      orderNode("#2046", "2026-05-01T00:00:00Z", "26.18", [{ id: "gid://d2", status: "NEEDS_RESPONSE", initiatedAs: "CHARGEBACK" }]),
+      orderNode("#1918", "2026-04-10T00:00:00Z", "30.00", [{ id: "gid://d3", status: "WON", initiatedAs: "CHARGEBACK" }]),
+    ], pageInfo: { hasNextPage: false, endCursor: null } } } });
+  }));
+  const open = await getDisputes("alpha");
+  assert.equal(open.sweptOrders, 4);
+  assert.equal(open.capped, false);
+  assert.deepEqual(open.disputes.map((d) => d.order), ["#2176", "#2046"]);
+  assert.equal(open.disputes[0].orderTotal, 42.98);
+  assert.equal(open.disputes[0].status, "NEEDS_RESPONSE");
+});
+
+test("getDisputes status:'all' includes closed; hitting the page cap sets capped", async (t) => {
+  t.mock.method(globalThis, "fetch", tokenOr((u, init) => {
+    const body = JSON.parse(String(init.body));
+    if ((body.query || "").includes("ianaTimezone")) return json({ data: { shop: { ianaTimezone: "UTC" } } });
+    return json({ data: { orders: { edges: [
+      orderNode("#1", "2026-06-01T00:00:00Z", "10.00", [{ id: "gid://x", status: "WON", initiatedAs: "CHARGEBACK" }]),
+    ], pageInfo: { hasNextPage: true, endCursor: "next" } } } });
+  }));
+  const all = await getDisputes("alpha", { status: "all" });
+  assert.equal(all.capped, true);
+  assert.equal(all.sweptOrders, 6);
+  assert.equal(all.disputes.length, 6);
 });
 
 test("getPayouts shapes balance and payouts", async (t) => {

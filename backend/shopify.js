@@ -497,41 +497,60 @@ export async function runReadQuery(storeKey, query, variables = {}) {
 
 const OPEN_DISPUTE_STATUSES = new Set(["NEEDS_RESPONSE", "UNDER_REVIEW"]);
 
-/** Chargebacks/inquiries from Shopify Payments. Needs read_shopify_payments_disputes. */
-export async function getDisputes(storeKey, { status = "open", limit = 10 } = {}) {
+const DISPUTE_SWEEP_MAX_PAGES = 6; // 6 × 250 = 1500 orders
+
+/**
+ * Chargebacks/inquiries found by sweeping orders' dispute summaries — needs
+ * only read_orders (last 60 days; grant read_all_orders for full history),
+ * NOT the locked Shopify Payments scopes. orderTotal approximates the
+ * disputed amount (the exact figure lives behind the payments scope).
+ */
+export async function getDisputes(storeKey, { status = "open", days = 120, limit = 20 } = {}) {
   const store = resolveStore(storeKey);
+  const timeZone = await getShopTimezone(store);
+  const since = startOfDayISO(new Date(), timeZone, days);
   const query = `
-    query($n: Int!) {
-      shopifyPaymentsAccount {
-        disputes(first: $n) {
-          edges { node {
-            id status type evidenceDueBy initiatedAt
-            amount { amount currencyCode }
-            reasonDetails { reason networkReasonCode }
-            order { name }
-          } }
-        }
+    query($q: String!, $after: String) {
+      orders(first: 250, query: $q, sortKey: CREATED_AT, reverse: true, after: $after) {
+        edges { node {
+          name createdAt
+          currentTotalPriceSet { shopMoney { amount currencyCode } }
+          disputes { id status initiatedAs }
+        } }
+        pageInfo { hasNextPage endCursor }
       }
     }`;
-  const data = await shopifyGraphQL(store, query, { n: limit });
-  const account = data.shopifyPaymentsAccount;
-  if (!account) {
-    return { store: store.key, status, disputes: [], note: "No Shopify Payments account on this store." };
+  const found = [];
+  let sweptOrders = 0;
+  let after = null;
+  let capped = false;
+  for (let page = 0; page < DISPUTE_SWEEP_MAX_PAGES; page++) {
+    const data = await shopifyGraphQL(store, query, { q: `created_at:>='${since}'`, after });
+    const { edges, pageInfo } = data.orders;
+    sweptOrders += edges.length;
+    for (const { node } of edges) {
+      for (const d of node.disputes || []) {
+        found.push({
+          id: d.id,
+          order: node.name,
+          orderCreatedAt: node.createdAt,
+          orderTotal: node.currentTotalPriceSet?.shopMoney?.amount != null
+            ? Number(node.currentTotalPriceSet.shopMoney.amount) : null,
+          currency: node.currentTotalPriceSet?.shopMoney?.currencyCode ?? null,
+          status: d.status,
+          initiatedAs: d.initiatedAs,
+        });
+      }
+    }
+    if (!pageInfo.hasNextPage) break;
+    after = pageInfo.endCursor;
+    capped = page === DISPUTE_SWEEP_MAX_PAGES - 1;
   }
-  let disputes = account.disputes.edges.map(({ node }) => ({
-    id: node.id,
-    order: node.order?.name ?? null,
-    amount: node.amount?.amount != null ? Number(node.amount.amount) : null,
-    currency: node.amount?.currencyCode ?? null,
-    reason: node.reasonDetails?.reason ?? null,
-    networkReasonCode: node.reasonDetails?.networkReasonCode ?? null,
-    status: node.status,
-    type: node.type,
-    evidenceDueBy: node.evidenceDueBy ?? null,
-    initiatedAt: node.initiatedAt ?? null,
-  }));
-  if (status === "open") disputes = disputes.filter((d) => OPEN_DISPUTE_STATUSES.has(d.status));
-  return { store: store.key, status, disputes };
+  const disputes = (status === "open"
+    ? found.filter((d) => OPEN_DISPUTE_STATUSES.has(d.status))
+    : found
+  ).slice(0, limit);
+  return { store: store.key, status, days, sweptOrders, capped, disputes };
 }
 
 /** Top products by units sold over a period (excludes test/cancelled orders). */

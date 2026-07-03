@@ -164,20 +164,22 @@ export function createMcpServer() {
     {
       title: "Chargebacks / Disputes",
       description:
-        "Shopify Payments chargebacks and inquiries — amount, reason, status, " +
-        "and the evidence-due deadline. Default lists OPEN disputes " +
-        "(needs response / under review). Requires the app to have the " +
-        "read_shopify_payments_disputes AND read_shopify_payments_accounts " +
-        "scopes (grant them and reinstall if missing).",
+        "Chargebacks and inquiries, found by sweeping recent orders' dispute " +
+        "records. Needs only read_orders (which exposes the last 60 days of " +
+        "orders — grant read_all_orders for full history). Default lists OPEN " +
+        "disputes (needs response / under review). orderTotal approximates the " +
+        "disputed amount. Respond to open disputes in Shopify admin → Finances " +
+        "→ Chargebacks before the evidence deadline.",
       inputSchema: {
         store: z.string().optional().describe("Store key (default store if omitted)."),
         status: z.enum(["open", "all"]).optional().describe("open (default) or all."),
-        limit: z.number().int().min(1).max(50).optional().describe("Max disputes (default 10)."),
+        days: z.number().int().min(1).max(365).optional().describe("How far back to sweep (default 120)."),
+        limit: z.number().int().min(1).max(50).optional().describe("Max disputes (default 20)."),
       },
     },
-    async ({ store, status, limit }) => {
+    async ({ store, status, days, limit }) => {
       try {
-        const r = await getDisputes(store, { status, limit });
+        const r = await getDisputes(store, { status, days, limit });
         return text(r);
       } catch (err) {
         return errorText(err.message);
