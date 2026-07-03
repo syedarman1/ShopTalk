@@ -1,9 +1,14 @@
 // New read tools, mocked fetch. Each test routes by URL/body; no real network.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { buildSchema, introspectionFromSchema } from "graphql";
+
+const MINI = buildSchema("schema { query: QueryRoot } type QueryRoot { shop: Shop } type Shop { name: String }");
+const INTRO_JSON = { data: introspectionFromSchema(MINI) };
 
 process.env.SHOPIFY_STORES = JSON.stringify([
   { key: "alpha", label: "Alpha", shopDomain: "alpha.myshopify.com", clientId: "id-a", clientSecret: "sec-a", apiVersion: "2026-01" },
+  { key: "beta", label: "Beta", shopDomain: "beta.myshopify.com", clientId: "id-b", clientSecret: "sec-b", apiVersion: "2026-01" },
 ]);
 
 const { runReadQuery, getDisputes, getBestSellers, getPayouts, getRefunds } =
@@ -24,10 +29,38 @@ test("runReadQuery rejects mutations without touching the network", async (t) =>
 test("runReadQuery passes read queries through and returns data", async (t) => {
   t.mock.method(globalThis, "fetch", tokenOr((u, init) => {
     const body = JSON.parse(String(init.body));
+    if (body.query.includes("__schema")) return json(INTRO_JSON);
     assert.match(body.query, /shop \{ name \}/);
     return json({ data: { shop: { name: "Alpha" } } });
   }));
   assert.deepEqual(await runReadQuery("alpha", `{ shop { name } }`), { shop: { name: "Alpha" } });
+});
+
+test("runReadQuery validates fields against the schema before executing", async (t) => {
+  t.mock.method(globalThis, "fetch", tokenOr((u, init) => {
+    const body = JSON.parse(String(init.body));
+    if (body.query.includes("__schema")) return json(INTRO_JSON);
+    throw new Error("must not execute an invalid query");
+  }));
+  await assert.rejects(() => runReadQuery("alpha", `{ shop { nmae } }`), /Query invalid.*nmae/s);
+});
+
+test("runReadQuery rejects malformed GraphQL with a syntax error, pre-execution", async (t) => {
+  t.mock.method(globalThis, "fetch", tokenOr((u, init) => {
+    const body = JSON.parse(String(init.body));
+    if (body.query?.includes("__schema")) return json(INTRO_JSON);
+    throw new Error("must not execute malformed GraphQL");
+  }));
+  await assert.rejects(() => runReadQuery("alpha", `{ shop {`), /syntax error/i);
+});
+
+test("runReadQuery still executes when introspection fails (fallback)", async (t) => {
+  t.mock.method(globalThis, "fetch", tokenOr((u, init) => {
+    const body = JSON.parse(String(init.body));
+    if (body.query.includes("__schema")) return json({}, 500);
+    return json({ data: { shop: { name: "Beta" } } });
+  }));
+  assert.deepEqual(await runReadQuery("beta", `{ shop { name } }`), { shop: { name: "Beta" } });
 });
 
 const orderNode = (name, createdAt, amount, disputes = []) => ({

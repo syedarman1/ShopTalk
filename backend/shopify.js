@@ -2,6 +2,7 @@
 // Pure helpers (period math, result shaping, aggregation) are unit-tested;
 // the network functions live in the same module and are exercised by smoke.js.
 
+import { parse, validate, buildClientSchema, getIntrospectionQuery } from "graphql";
 import { resolveStore, getStores } from "./stores.js";
 
 // ---------- Pure helpers (network-free) ----------
@@ -483,15 +484,52 @@ export async function searchCustomers(storeKey, { query: q, limit = DEFAULT_LIMI
   return { store: store.key, customers: data.customers.edges.map((e) => shapeCustomer(e.node)) };
 }
 
+const schemaCache = new Map(); // store.key -> GraphQLSchema | null (null = introspection failed)
+
+async function getClientSchema(store) {
+  if (schemaCache.has(store.key)) return schemaCache.get(store.key);
+  try {
+    const data = await shopifyGraphQL(store, getIntrospectionQuery());
+    const schema = buildClientSchema(data);
+    schemaCache.set(store.key, schema);
+    return schema;
+  } catch {
+    schemaCache.set(store.key, null); // availability over strictness
+    return null;
+  }
+}
+
 /**
- * Read-only escape hatch: run an arbitrary Admin GraphQL QUERY. Mutations are
- * rejected here, and the app's read-only scopes make writes impossible anyway.
+ * Read-only escape hatch: run an arbitrary Admin GraphQL QUERY. Syntax and
+ * schema validation happen locally first (clear errors, "did you mean…");
+ * mutations/subscriptions are rejected from the AST before any network I/O,
+ * and the app's read-only scopes make writes impossible anyway.
  */
 export async function runReadQuery(storeKey, query, variables = {}) {
   if (/\bmutation\b/i.test(query)) {
     throw new Error("read-only: mutations are not allowed. Send a query instead.");
   }
+  let doc;
+  try {
+    doc = parse(query);
+  } catch (e) {
+    throw new Error(`GraphQL syntax error: ${e.message}`);
+  }
+  for (const def of doc.definitions) {
+    if (def.kind === "OperationDefinition" && def.operation !== "query") {
+      throw new Error(`read-only: ${def.operation}s are not allowed.`);
+    }
+  }
   const store = resolveStore(storeKey);
+  const schema = await getClientSchema(store);
+  if (schema) {
+    const errors = validate(schema, doc);
+    if (errors.length) {
+      throw new Error(
+        `Query invalid: ${errors.slice(0, 3).map((e) => e.message).join(" | ")} — use get_schema to inspect types.`
+      );
+    }
+  }
   return shopifyGraphQL(store, query, variables);
 }
 

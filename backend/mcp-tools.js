@@ -268,8 +268,10 @@ export function createMcpServer() {
       title: "Run Read Query",
       description:
         "Escape hatch: run any READ-ONLY Shopify Admin GraphQL query when no " +
-        "dedicated tool covers the question. Mutations are rejected and the app " +
-        "holds read scopes only. Keep selections small (a few fields, first: <= 10). " +
+        "dedicated tool covers the question. Validated locally against the " +
+        "store's schema before executing (clear 'did you mean' errors) — use " +
+        "get_schema first when unsure of field names. Mutations are rejected " +
+        "and the app holds read scopes only. Keep selections small (a few fields, first: <= 10). " +
         "Examples — shop info: { shop { name currencyCode plan { displayName } } } | " +
         "abandoned checkouts: { abandonedCheckouts(first: 5) { edges { node { " +
         "createdAt totalPriceSet { shopMoney { amount currencyCode } } } } } }",
