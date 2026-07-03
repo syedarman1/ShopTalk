@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { periodToRange, shapeOrder, summarizeSales, aggregateSales, shapeProduct, shapeCustomer } from "../shopify.js";
+import { periodToRange, shapeOrder, summarizeSales, aggregateSales, rankLineItems, shapeProduct, shapeCustomer } from "../shopify.js";
 
 test("periodToRange('today') returns midnight UTC of now", () => {
   const now = new Date("2026-06-20T15:30:00Z");
@@ -184,6 +184,33 @@ test("aggregateSales propagates the capped flag and lists capped stores", () => 
   assert.equal(r.capped, true);
   assert.deepEqual(r.cappedStores, ["main"]);
   assert.equal(r.orderCount, 300);
+});
+
+test("rankLineItems sums units by title and counts orders", () => {
+  const r = rankLineItems([
+    { test: false, cancelledAt: null, lineItems: [{ title: "Hoodie", quantity: 2 }, { title: "Tote", quantity: 1 }] },
+    { test: false, cancelledAt: null, lineItems: [{ title: "Hoodie", quantity: 3 }] },
+  ]);
+  assert.deepEqual(r[0], { title: "Hoodie", unitsSold: 5, orders: 2 });
+  assert.deepEqual(r[1], { title: "Tote", unitsSold: 1, orders: 1 });
+});
+
+test("rankLineItems excludes test and cancelled orders", () => {
+  const r = rankLineItems([
+    { test: true, cancelledAt: null, lineItems: [{ title: "X", quantity: 99 }] },
+    { test: false, cancelledAt: "2026-01-01T00:00:00Z", lineItems: [{ title: "X", quantity: 99 }] },
+    { test: false, cancelledAt: null, lineItems: [{ title: "X", quantity: 1 }] },
+  ]);
+  assert.deepEqual(r, [{ title: "X", unitsSold: 1, orders: 1 }]);
+});
+
+test("rankLineItems slices to the limit, highest first", () => {
+  const orders = [{ test: false, cancelledAt: null, lineItems: [
+    { title: "A", quantity: 3 }, { title: "B", quantity: 2 }, { title: "C", quantity: 1 },
+  ] }];
+  const top2 = rankLineItems(orders, 2);
+  assert.equal(top2.length, 2);
+  assert.equal(top2[0].title, "A");
 });
 
 test("shapeProduct flattens a GraphQL product node and coerces price to Number", () => {

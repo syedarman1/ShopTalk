@@ -151,6 +151,27 @@ export function aggregateSales(perStore) {
   return { byCurrency, orderCount, averageByCurrency, capped: cappedStores.length > 0, cappedStores };
 }
 
+/**
+ * Rank products by units sold across a list of orders. Excludes test and
+ * cancelled orders (same rules as revenue). `orders` on each result = how many
+ * orders contained that product. Stable sort keeps first-seen order on ties.
+ */
+export function rankLineItems(orders, limit = 5) {
+  const byTitle = new Map();
+  for (const o of orders) {
+    if (o.test || o.cancelledAt != null) continue;
+    const seen = new Set();
+    for (const li of o.lineItems || []) {
+      if (!li?.title) continue;
+      const entry = byTitle.get(li.title) || { title: li.title, unitsSold: 0, orders: 0 };
+      entry.unitsSold += li.quantity || 0;
+      if (!seen.has(li.title)) { entry.orders += 1; seen.add(li.title); }
+      byTitle.set(li.title, entry);
+    }
+  }
+  return [...byTitle.values()].sort((a, b) => b.unitsSold - a.unitsSold).slice(0, limit);
+}
+
 // ---------- Network client ----------
 
 const DEFAULT_LIMIT = 10;
