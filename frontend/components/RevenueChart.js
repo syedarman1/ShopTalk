@@ -2,6 +2,7 @@
 import { useRef, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { buildRevenueChart } from "../lib/revenueChart.mjs";
+import { money } from "../lib/format.mjs";
 
 const VIEW_W = 560;
 const VIEW_H = 180;
@@ -13,13 +14,7 @@ export default function RevenueChart({ points, currency = "USD" }) {
   const chart = buildRevenueChart(points, { width: VIEW_W, height: VIEW_H });
   if (!chart.linePath) return null;
 
-  const fmt = (v) => {
-    try {
-      return new Intl.NumberFormat(undefined, { style: "currency", currency, maximumFractionDigits: 0 }).format(v);
-    } catch {
-      return `${Math.round(v)} ${currency}`;
-    }
-  };
+  const fmt = (v) => money(v, currency, { maximumFractionDigits: 0 });
 
   function onMove(e) {
     const svg = svgRef.current;
@@ -39,8 +34,8 @@ export default function RevenueChart({ points, currency = "USD" }) {
         ref={svgRef}
         viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
         className="w-full"
-        onMouseMove={onMove}
-        onMouseLeave={() => setHover(null)}
+        onPointerMove={onMove}
+        onPointerLeave={() => setHover(null)}
         role="img"
         aria-label="Revenue today compared with yesterday"
       >

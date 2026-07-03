@@ -38,7 +38,7 @@ export default function ActivityLog({ activity }) {
                   )}
                   {event.store && <span className="text-xs text-muted-foreground">→ {event.store}</span>}
                 </div>
-                <p className="mt-0.5 truncate text-[13px] text-foreground/90">{event.message}</p>
+                <p title={event.message} className="mt-0.5 truncate text-[13px] text-foreground/90">{event.message}</p>
               </div>
               <time className="font-mono text-[10px] text-muted-foreground">{formatTime(event.timestamp)}</time>
             </motion.li>

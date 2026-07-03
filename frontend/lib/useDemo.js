@@ -60,6 +60,5 @@ export function useDemo() {
     typing,
     questions: DEMO_SCRIPT.map((s) => ({ id: s.id, question: s.question })),
     runQuestion,
-    mode: "demo",
   };
 }

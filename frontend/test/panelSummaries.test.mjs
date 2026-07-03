@@ -6,6 +6,7 @@ import {
 
 test("stockLevel classifies out/low/in", () => {
   assert.equal(stockLevel(0), "out");
+  assert.equal(stockLevel(-5), "out"); // oversold is still out of stock
   assert.equal(stockLevel(5), "low");
   assert.equal(stockLevel(10), "low");
   assert.equal(stockLevel(11), "in");

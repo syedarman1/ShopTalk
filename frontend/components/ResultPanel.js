@@ -5,18 +5,7 @@ import { pctChange } from "../lib/revenueChart.mjs";
 import { PanelHeader, StatStrip, StatusPill, SplitBar, SpendBar } from "./PanelUI";
 import { summarizeOrders, summarizeProducts, summarizeCustomers, stockLevel } from "../lib/panelSummaries.mjs";
 import { motion, AnimatePresence } from "framer-motion";
-
-// Format an amount with its currency symbol + thousands separators (e.g. $2,480.00).
-// Falls back to "amount CODE" if the currency code isn't a valid ISO code.
-function money(amount, currency) {
-  const n = Number(amount);
-  if (!Number.isFinite(n)) return "—";
-  try {
-    return new Intl.NumberFormat(undefined, { style: "currency", currency }).format(n);
-  } catch {
-    return `${n.toFixed(2)} ${currency}`;
-  }
-}
+import { money } from "../lib/format.mjs";
 
 const fmtMoney = (byCurrency) =>
   Object.entries(byCurrency || {})
@@ -33,7 +22,10 @@ function Empty() {
 
 function DeltaBadge({ pct }) {
   if (pct == null) return null;
-  const up = pct >= 0;
+  if (pct === 0) {
+    return <span className="text-sm font-medium text-muted-foreground">flat vs yesterday</span>;
+  }
+  const up = pct > 0;
   return (
     <span className={`inline-flex items-center gap-1 text-sm font-medium ${up ? "text-shopify-light" : "text-rose-400"}`}>
       {up ? "▲" : "▼"} {Math.abs(pct).toFixed(0)}% vs yesterday

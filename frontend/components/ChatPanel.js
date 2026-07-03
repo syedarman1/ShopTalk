@@ -62,7 +62,7 @@ export default function ChatPanel({ chat, typing, questions, runQuestion }) {
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-2 rounded-full border border-border bg-card px-3 py-2">
+        <div aria-hidden="true" className="flex items-center gap-2 rounded-full border border-border bg-card px-3 py-2">
           <span className="flex-1 text-sm text-muted-foreground">Message…</span>
           <span className="flex h-6 w-6 items-center justify-center rounded-full bg-sky-500 text-xs text-white">↑</span>
         </div>

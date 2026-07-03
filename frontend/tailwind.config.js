@@ -40,15 +40,6 @@ module.exports = {
       fontFamily: {
         mono: ["var(--font-mono)", "ui-monospace", "monospace"],
       },
-      keyframes: {
-        "ping-slow": {
-          "0%": { transform: "scale(1)", opacity: "0.55" },
-          "70%, 100%": { transform: "scale(2.6)", opacity: "0" },
-        },
-      },
-      animation: {
-        "ping-slow": "ping-slow 2.6s cubic-bezier(0, 0, 0.2, 1) infinite",
-      },
     },
   },
   plugins: [],

@@ -4,8 +4,8 @@
 const LOW_STOCK = 10;
 
 export function stockLevel(inventory) {
-  if (inventory === 0) return "out";
-  if (typeof inventory === "number" && inventory > 0 && inventory <= LOW_STOCK) return "low";
+  if (typeof inventory === "number" && inventory <= 0) return "out"; // 0 or oversold
+  if (typeof inventory === "number" && inventory <= LOW_STOCK) return "low";
   return "in";
 }
 
