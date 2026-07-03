@@ -11,7 +11,7 @@ process.env.SHOPIFY_STORES = JSON.stringify([
   { key: "beta", label: "Beta", shopDomain: "beta.myshopify.com", clientId: "id-b", clientSecret: "sec-b", apiVersion: "2026-01" },
 ]);
 
-const { runReadQuery, getDisputes, getBestSellers, getPayouts, getRefunds } =
+const { runReadQuery, getDisputes, getBestSellers, getPayouts, getRefunds, getShopInfo } =
   await import("../shopify.js");
 
 const json = (obj, status = 200) =>
@@ -138,6 +138,22 @@ test("getBestSellers ranks units over the period and excludes test orders", asyn
   assert.equal(r.label, "last 30 days");
   assert.deepEqual(r.bestSellers[0], { title: "Hoodie", unitsSold: 2, orders: 1 });
   assert.equal(r.capped, false);
+});
+
+test("getShopInfo flattens the shop payload", async (t) => {
+  t.mock.method(globalThis, "fetch", tokenOr((u, init) => {
+    const body = JSON.parse(String(init.body));
+    if (!body.query.includes("myshopifyDomain")) throw new Error("unexpected query");
+    return json({ data: { shop: {
+      name: "Alpha", email: "a@x.com", myshopifyDomain: "alpha.myshopify.com",
+      primaryDomain: { host: "alpha.com" }, currencyCode: "USD",
+      ianaTimezone: "America/New_York", plan: { displayName: "Shopify" },
+    } } });
+  }));
+  const r = await getShopInfo("alpha");
+  assert.equal(r.domain, "alpha.com");
+  assert.equal(r.plan, "Shopify");
+  assert.equal(r.timezone, "America/New_York");
 });
 
 test("getRefunds queries refunded orders by last update", async (t) => {

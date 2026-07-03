@@ -47,7 +47,7 @@ an outside tool or data source in a consistent way. A program that speaks MCP
 exposes a set of **tools** the AI can call. Poke acts as an **MCP host**: you add
 an integration (a built-in "recipe" or any custom MCP server URL), Poke
 discovers the tools that server exposes, and it calls them when a text needs one.
-**ShopTalk is one such custom MCP server** — it exposes twelve read-only tools
+**ShopTalk is one such custom MCP server** — it exposes fourteen read-only tools
 backed by the Shopify Admin API, and Poke is the client that calls them when you
 text a question about your store.
 
@@ -62,7 +62,7 @@ queries Shopify and returns the data → Poke replies in plain English.
 
 ---
 
-## What you can ask (the twelve tools)
+## What you can ask (the fourteen tools)
 
 | Tool | The question it answers |
 |------|--------------------------|
@@ -70,10 +70,12 @@ queries Shopify and returns the data → Poke replies in plain English.
 | `get_sales` | "How much did I sell today / yesterday / in the last 7 or 30 days?" (revenue, orders, average order value — per store or all stores combined) |
 | `get_daily_briefing` | "How's my store doing?" — yesterday's sales, unfulfilled orders, and low-stock items in one call (built for a scheduled morning text) |
 | `get_best_sellers` | "What's actually selling?" — top products by units sold over a period |
-| `get_disputes` | "Any open chargebacks?" — amount, reason, and the evidence-due deadline |
+| `get_disputes` | "Any open chargebacks?" — sweeps recent orders' dispute records (needs only `read_orders`; add `read_all_orders` to see past the 60-day window) |
 | `get_payouts` | "When does my money land?" — Shopify Payments balance + recent payouts |
 | `get_refunds` | "Any refunds lately?" — recently refunded orders |
-| `run_query` | Anything else — a read-only Admin GraphQL escape hatch (mutations rejected) |
+| `run_query` | Anything else — a read-only Admin GraphQL escape hatch, validated locally against the store's schema before executing (mutations rejected) |
+| `get_schema` | "What fields does Order have?" — schema lookup so `run_query` never guesses |
+| `get_shop_info` | Store basics — name, domain, currency, timezone, plan |
 | `get_orders` | "Show my recent orders" / "anything unfulfilled?" |
 | `get_order` | "What's in order #1042?" |
 | `search_products` | "Find my hoodie" / "what do I sell?" |
@@ -125,7 +127,7 @@ GraphQL · Next.js 14 / React 18 · Tailwind. Backend deployable to Railway/Rend
 backend/
   server.js      Express: MCP-over-HTTP at /mcp (auth-gated) + /api/health
   auth.js        /mcp shared-secret check (fails closed to loopback)
-  mcp-tools.js   the 7 read-only MCP tools (createMcpServer factory)
+  mcp-tools.js   the 14 read-only MCP tools (createMcpServer factory)
   shopify.js     Admin GraphQL client + OAuth token exchange/cache + read fns
   stores.js      multi-store registry (parses SHOPIFY_STORES)
   test/          unit tests (node --test)
@@ -149,7 +151,7 @@ Shopify store, and Node 22+.
 
 ### 1. Create a Shopify app (client-credentials)
 1. In the Shopify **[Dev Dashboard](https://dev.shopify.com)**, create an app under your org.
-2. Give it read scopes — `read_orders`, `read_products`, `read_customers` (plus `read_shopify_payments_disputes`, `read_shopify_payments_payouts`, **and** `read_shopify_payments_accounts` if you want chargebacks/payouts — the accounts scope gates the `shopifyPaymentsAccount` field itself) — and **release** the version.
+2. Give it read scopes — `read_orders`, `read_products`, `read_customers`, plus `read_all_orders` if you want chargeback sweeps and history beyond the 60-day order window (the payments scopes `read_shopify_payments_payouts`/`_accounts` enable `get_payouts`, but note some Dev Dashboard app types won't grant `_accounts`) — and **release** the version.
 3. Install it on your store and copy the **Client ID** and **Client Secret** (`shpss_…`).
 4. Note your store's `*.myshopify.com` domain (Settings → Domains).
 

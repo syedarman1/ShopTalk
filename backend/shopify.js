@@ -652,6 +652,30 @@ export async function getPayouts(storeKey, { limit = 5 } = {}) {
   };
 }
 
+/** Basic store facts: name, domains, currency, timezone, plan. */
+export async function getShopInfo(storeKey) {
+  const store = resolveStore(storeKey);
+  const data = await shopifyGraphQL(store, `{
+    shop {
+      name email myshopifyDomain
+      primaryDomain { host }
+      currencyCode ianaTimezone
+      plan { displayName }
+    }
+  }`);
+  const s = data.shop;
+  return {
+    store: store.key,
+    name: s.name,
+    email: s.email,
+    myshopifyDomain: s.myshopifyDomain,
+    domain: s.primaryDomain?.host ?? null,
+    currency: s.currencyCode,
+    timezone: s.ianaTimezone,
+    plan: s.plan?.displayName ?? null,
+  };
+}
+
 /** Recently refunded / partially refunded orders (ordered by last update). */
 export async function getRefunds(storeKey, { limit = 10 } = {}) {
   const store = resolveStore(storeKey);

@@ -20,6 +20,7 @@ import {
   getBestSellers,
   getPayouts,
   getRefunds,
+  getShopInfo,
 } from "./shopify.js";
 
 const text = (value) => ({
@@ -229,6 +230,26 @@ export function createMcpServer() {
     async ({ store, limit }) => {
       try {
         const r = await getRefunds(store, { limit });
+        return text(r);
+      } catch (err) {
+        return errorText(err.message);
+      }
+    }
+  );
+
+  // get_shop_info ---------------------------------------------------------------
+  server.registerTool(
+    "get_shop_info",
+    {
+      title: "Shop Info",
+      description: "Store basics: name, domains, contact email, currency, timezone, plan.",
+      inputSchema: {
+        store: z.string().optional().describe("Store key (default store if omitted)."),
+      },
+    },
+    async ({ store }) => {
+      try {
+        const r = await getShopInfo(store);
         return text(r);
       } catch (err) {
         return errorText(err.message);
