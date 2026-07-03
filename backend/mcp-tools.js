@@ -6,6 +6,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { listStoreSummaries } from "./stores.js";
+import { getSchemaType } from "./introspect.js";
 import {
   getSales,
   getSalesAllStores,
@@ -228,6 +229,31 @@ export function createMcpServer() {
     async ({ store, limit }) => {
       try {
         const r = await getRefunds(store, { limit });
+        return text(r);
+      } catch (err) {
+        return errorText(err.message);
+      }
+    }
+  );
+
+  // get_schema ----------------------------------------------------------------
+  server.registerTool(
+    "get_schema",
+    {
+      title: "Inspect Admin Schema",
+      description:
+        "Look up REAL field names before writing a run_query. Default type " +
+        "QueryRoot lists everything queryable; pass any type name (Order, " +
+        "Customer, Product, ShopifyPaymentsDispute…) to see its fields, " +
+        "argument lists, and enum values.",
+      inputSchema: {
+        store: z.string().optional().describe("Store key (default store if omitted)."),
+        type: z.string().optional().describe("GraphQL type name (default QueryRoot)."),
+      },
+    },
+    async ({ store, type }) => {
+      try {
+        const r = await getSchemaType(store, type ?? "QueryRoot");
         return text(r);
       } catch (err) {
         return errorText(err.message);
