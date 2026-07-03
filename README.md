@@ -47,7 +47,7 @@ an outside tool or data source in a consistent way. A program that speaks MCP
 exposes a set of **tools** the AI can call. Poke acts as an **MCP host**: you add
 an integration (a built-in "recipe" or any custom MCP server URL), Poke
 discovers the tools that server exposes, and it calls them when a text needs one.
-**ShopTalk is one such custom MCP server** — it exposes seven read-only tools
+**ShopTalk is one such custom MCP server** — it exposes twelve read-only tools
 backed by the Shopify Admin API, and Poke is the client that calls them when you
 text a question about your store.
 
@@ -62,13 +62,18 @@ queries Shopify and returns the data → Poke replies in plain English.
 
 ---
 
-## What you can ask (the seven tools)
+## What you can ask (the twelve tools)
 
 | Tool | The question it answers |
 |------|--------------------------|
 | `list_stores` | "Which stores are connected?" |
 | `get_sales` | "How much did I sell today / yesterday / in the last 7 or 30 days?" (revenue, orders, average order value — per store or all stores combined) |
 | `get_daily_briefing` | "How's my store doing?" — yesterday's sales, unfulfilled orders, and low-stock items in one call (built for a scheduled morning text) |
+| `get_best_sellers` | "What's actually selling?" — top products by units sold over a period |
+| `get_disputes` | "Any open chargebacks?" — amount, reason, and the evidence-due deadline |
+| `get_payouts` | "When does my money land?" — Shopify Payments balance + recent payouts |
+| `get_refunds` | "Any refunds lately?" — recently refunded orders |
+| `run_query` | Anything else — a read-only Admin GraphQL escape hatch (mutations rejected) |
 | `get_orders` | "Show my recent orders" / "anything unfulfilled?" |
 | `get_order` | "What's in order #1042?" |
 | `search_products` | "Find my hoodie" / "what do I sell?" |
@@ -144,7 +149,7 @@ Shopify store, and Node 22+.
 
 ### 1. Create a Shopify app (client-credentials)
 1. In the Shopify **[Dev Dashboard](https://dev.shopify.com)**, create an app under your org.
-2. Give it read scopes — `read_orders`, `read_products`, `read_customers` — and **release** the version.
+2. Give it read scopes — `read_orders`, `read_products`, `read_customers` (plus `read_shopify_payments_disputes` and `read_shopify_payments_payouts` if you want chargebacks/payouts) — and **release** the version.
 3. Install it on your store and copy the **Client ID** and **Client Secret** (`shpss_…`).
 4. Note your store's `*.myshopify.com` domain (Settings → Domains).
 
@@ -198,7 +203,7 @@ stream over long-lived HTTP connections.
 ShopTalk starts read-only and safe by design — and it's built to grow. What's next:
 
 - **Write actions** — fulfilling orders, adjusting inventory, tagging customers. Read-only today; the tool layer adds each cleanly behind the same MCP interface.
-- **Deeper analytics** — sales trend charts and best-seller ranking by units sold (today `get_sales` returns the period total + order count).
+- **Deeper analytics** — sales trend charts (today `get_sales` returns the period total + order count; best-seller ranking shipped as `get_best_sellers`).
 - **Flexible time ranges** — custom date ranges beyond the current `today` / `yesterday` / `7d` / `30d`.
 - **Larger result windows** — paginate past the current single 250-order page (a `capped` flag already surfaces overflow).
 
