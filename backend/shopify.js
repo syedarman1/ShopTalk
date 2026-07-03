@@ -482,3 +482,131 @@ export async function searchCustomers(storeKey, { query: q, limit = DEFAULT_LIMI
   const data = await shopifyGraphQL(store, gql, { q: q || null, n: limit });
   return { store: store.key, customers: data.customers.edges.map((e) => shapeCustomer(e.node)) };
 }
+
+/**
+ * Read-only escape hatch: run an arbitrary Admin GraphQL QUERY. Mutations are
+ * rejected here, and the app's read-only scopes make writes impossible anyway.
+ */
+export async function runReadQuery(storeKey, query, variables = {}) {
+  if (/\bmutation\b/i.test(query)) {
+    throw new Error("read-only: mutations are not allowed. Send a query instead.");
+  }
+  const store = resolveStore(storeKey);
+  return shopifyGraphQL(store, query, variables);
+}
+
+const OPEN_DISPUTE_STATUSES = new Set(["NEEDS_RESPONSE", "UNDER_REVIEW"]);
+
+/** Chargebacks/inquiries from Shopify Payments. Needs read_shopify_payments_disputes. */
+export async function getDisputes(storeKey, { status = "open", limit = 10 } = {}) {
+  const store = resolveStore(storeKey);
+  const query = `
+    query($n: Int!) {
+      shopifyPaymentsAccount {
+        disputes(first: $n) {
+          edges { node {
+            id status type evidenceDueBy initiatedAt
+            amount { amount currencyCode }
+            reasonDetails { reason networkReasonCode }
+            order { name }
+          } }
+        }
+      }
+    }`;
+  const data = await shopifyGraphQL(store, query, { n: limit });
+  const account = data.shopifyPaymentsAccount;
+  if (!account) {
+    return { store: store.key, status, disputes: [], note: "No Shopify Payments account on this store." };
+  }
+  let disputes = account.disputes.edges.map(({ node }) => ({
+    id: node.id,
+    order: node.order?.name ?? null,
+    amount: node.amount?.amount != null ? Number(node.amount.amount) : null,
+    currency: node.amount?.currencyCode ?? null,
+    reason: node.reasonDetails?.reason ?? null,
+    networkReasonCode: node.reasonDetails?.networkReasonCode ?? null,
+    status: node.status,
+    type: node.type,
+    evidenceDueBy: node.evidenceDueBy ?? null,
+    initiatedAt: node.initiatedAt ?? null,
+  }));
+  if (status === "open") disputes = disputes.filter((d) => OPEN_DISPUTE_STATUSES.has(d.status));
+  return { store: store.key, status, disputes };
+}
+
+/** Top products by units sold over a period (excludes test/cancelled orders). */
+export async function getBestSellers(storeKey, { period = "30d", limit = 5 } = {}) {
+  const store = resolveStore(storeKey);
+  const timeZone = await getShopTimezone(store);
+  const { since, until, label } = periodToRange(period, new Date(), timeZone);
+  const query = `
+    query($q: String!) {
+      orders(first: 50, query: $q, sortKey: CREATED_AT, reverse: true) {
+        edges { node {
+          test cancelledAt
+          lineItems(first: 20) { edges { node { title quantity } } }
+        } }
+        pageInfo { hasNextPage }
+      }
+    }`;
+  const data = await shopifyGraphQL(store, query, {
+    q: `created_at:>='${since}'` + (until ? ` created_at:<'${until}'` : ""),
+  });
+  const orders = data.orders.edges.map(({ node }) => ({
+    test: node.test === true,
+    cancelledAt: node.cancelledAt ?? null,
+    lineItems: node.lineItems.edges.map((e) => e.node),
+  }));
+  return {
+    store: store.key,
+    label,
+    bestSellers: rankLineItems(orders, limit),
+    capped: data.orders.pageInfo.hasNextPage, // true => based on the newest 50 orders only
+  };
+}
+
+/** Recent Shopify Payments payouts + current balance. Needs read_shopify_payments_payouts. */
+export async function getPayouts(storeKey, { limit = 5 } = {}) {
+  const store = resolveStore(storeKey);
+  const query = `
+    query($n: Int!) {
+      shopifyPaymentsAccount {
+        balance { amount currencyCode }
+        payouts(first: $n) {
+          edges { node { id issuedAt status net { amount currencyCode } } }
+        }
+      }
+    }`;
+  const data = await shopifyGraphQL(store, query, { n: limit });
+  const account = data.shopifyPaymentsAccount;
+  if (!account) {
+    return { store: store.key, balance: [], payouts: [], note: "No Shopify Payments account on this store." };
+  }
+  return {
+    store: store.key,
+    balance: (account.balance || []).map((b) => ({ amount: Number(b.amount), currency: b.currencyCode })),
+    payouts: account.payouts.edges.map(({ node }) => ({
+      id: node.id,
+      issuedAt: node.issuedAt ?? null,
+      status: node.status,
+      net: node.net?.amount != null ? Number(node.net.amount) : null,
+      currency: node.net?.currencyCode ?? null,
+    })),
+  };
+}
+
+/** Recently refunded / partially refunded orders (ordered by last update). */
+export async function getRefunds(storeKey, { limit = 10 } = {}) {
+  const store = resolveStore(storeKey);
+  const query = `
+    query($q: String!, $n: Int!) {
+      orders(first: $n, query: $q, sortKey: UPDATED_AT, reverse: true) {
+        edges { node { ${ORDER_FIELDS} } }
+      }
+    }`;
+  const data = await shopifyGraphQL(store, query, {
+    q: "(financial_status:refunded OR financial_status:partially_refunded)",
+    n: limit,
+  });
+  return { store: store.key, orders: data.orders.edges.map((e) => shapeOrder(e.node)) };
+}
