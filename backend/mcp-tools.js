@@ -14,6 +14,11 @@ import {
   getOrder,
   searchProducts,
   searchCustomers,
+  runReadQuery,
+  getDisputes,
+  getBestSellers,
+  getPayouts,
+  getRefunds,
 } from "./shopify.js";
 
 const text = (value) => ({
@@ -36,10 +41,17 @@ export function createMcpServer() {
     {
       instructions:
         "ShopTalk gives read-only access to the owner's Shopify store(s). " +
-        "Call list_stores first if unsure which stores exist. " +
-        "Every tool takes an optional `store` key; omit it to use the default " +
-        "store (or, for get_sales, to roll up across all stores). All tools are " +
-        "read-only — there is no way to change store data.",
+        "Call list_stores first if unsure which stores exist. Every tool takes " +
+        "an optional `store` key; omit it for the default store (get_sales " +
+        "rolls up across all stores when omitted). Coverage: sales & AOV " +
+        "(get_sales), morning summary (get_daily_briefing), orders (get_orders, " +
+        "get_order), refunds (get_refunds), chargebacks (get_disputes), payouts " +
+        "& balance (get_payouts), products & stock (search_products), best " +
+        "sellers (get_best_sellers), customers (search_customers). For anything " +
+        "else, use run_query with a read-only Admin GraphQL query. Prefer the " +
+        "dedicated tools when one fits. If neither a tool nor run_query can " +
+        "answer, say so plainly — never invent numbers. Everything is " +
+        "read-only: there is no way to change store data.",
     }
   );
 
@@ -115,6 +127,131 @@ export function createMcpServer() {
     async ({ store, lowStockThreshold }) => {
       try {
         const r = await getDailyBriefing({ storeKey: store, lowStockThreshold });
+        return text(r);
+      } catch (err) {
+        return errorText(err.message);
+      }
+    }
+  );
+
+  // get_best_sellers --------------------------------------------------------
+  server.registerTool(
+    "get_best_sellers",
+    {
+      title: "Best Sellers",
+      description:
+        "Top products by units actually sold over a period (test and cancelled " +
+        "orders excluded). Use for \"what's selling?\" / \"top products this month\".",
+      inputSchema: {
+        store: z.string().optional().describe("Store key (default store if omitted)."),
+        period: z.enum(["today", "yesterday", "7d", "30d"]).optional().describe("Window (default 30d)."),
+        limit: z.number().int().min(1).max(20).optional().describe("How many products (default 5)."),
+      },
+    },
+    async ({ store, period, limit }) => {
+      try {
+        const r = await getBestSellers(store, { period, limit });
+        return text(r);
+      } catch (err) {
+        return errorText(err.message);
+      }
+    }
+  );
+
+  // get_disputes -------------------------------------------------------------
+  server.registerTool(
+    "get_disputes",
+    {
+      title: "Chargebacks / Disputes",
+      description:
+        "Shopify Payments chargebacks and inquiries — amount, reason, status, " +
+        "and the evidence-due deadline. Default lists OPEN disputes " +
+        "(needs response / under review). Requires the app to have the " +
+        "read_shopify_payments_disputes scope (grant it and reinstall if missing).",
+      inputSchema: {
+        store: z.string().optional().describe("Store key (default store if omitted)."),
+        status: z.enum(["open", "all"]).optional().describe("open (default) or all."),
+        limit: z.number().int().min(1).max(50).optional().describe("Max disputes (default 10)."),
+      },
+    },
+    async ({ store, status, limit }) => {
+      try {
+        const r = await getDisputes(store, { status, limit });
+        return text(r);
+      } catch (err) {
+        return errorText(err.message);
+      }
+    }
+  );
+
+  // get_payouts ---------------------------------------------------------------
+  server.registerTool(
+    "get_payouts",
+    {
+      title: "Payouts & Balance",
+      description:
+        "Shopify Payments: current balance and recent payouts with status " +
+        "(scheduled / in transit / paid) — \"when does my money land?\". Requires " +
+        "the read_shopify_payments_payouts scope (grant it and reinstall if missing).",
+      inputSchema: {
+        store: z.string().optional().describe("Store key (default store if omitted)."),
+        limit: z.number().int().min(1).max(20).optional().describe("Max payouts (default 5)."),
+      },
+    },
+    async ({ store, limit }) => {
+      try {
+        const r = await getPayouts(store, { limit });
+        return text(r);
+      } catch (err) {
+        return errorText(err.message);
+      }
+    }
+  );
+
+  // get_refunds ---------------------------------------------------------------
+  server.registerTool(
+    "get_refunds",
+    {
+      title: "Recent Refunds",
+      description:
+        "Recently refunded or partially refunded orders (ordered by last " +
+        "update, which approximates refund time).",
+      inputSchema: {
+        store: z.string().optional().describe("Store key (default store if omitted)."),
+        limit: z.number().int().min(1).max(50).optional().describe("Max orders (default 10)."),
+      },
+    },
+    async ({ store, limit }) => {
+      try {
+        const r = await getRefunds(store, { limit });
+        return text(r);
+      } catch (err) {
+        return errorText(err.message);
+      }
+    }
+  );
+
+  // run_query -----------------------------------------------------------------
+  server.registerTool(
+    "run_query",
+    {
+      title: "Run Read Query",
+      description:
+        "Escape hatch: run any READ-ONLY Shopify Admin GraphQL query when no " +
+        "dedicated tool covers the question. Mutations are rejected and the app " +
+        "holds read scopes only. Keep selections small (a few fields, first: <= 10). " +
+        "Examples — shop info: { shop { name currencyCode plan { displayName } } } | " +
+        "abandoned checkouts: { abandonedCheckouts(first: 5) { edges { node { " +
+        "createdAt totalPriceSet { shopMoney { amount currencyCode } } } } } }",
+      inputSchema: {
+        store: z.string().optional().describe("Store key (default store if omitted)."),
+        query: z.string().describe("A GraphQL query document. Mutations are rejected."),
+        variables: z.record(z.string(), z.any()).optional().describe("Optional GraphQL variables."),
+      },
+    },
+    async ({ store, query, variables }) => {
+      try {
+        const r = await runReadQuery(store, query, variables ?? {});
         return text(r);
       } catch (err) {
         return errorText(err.message);
