@@ -167,7 +167,8 @@ export function createMcpServer() {
         "Shopify Payments chargebacks and inquiries — amount, reason, status, " +
         "and the evidence-due deadline. Default lists OPEN disputes " +
         "(needs response / under review). Requires the app to have the " +
-        "read_shopify_payments_disputes scope (grant it and reinstall if missing).",
+        "read_shopify_payments_disputes AND read_shopify_payments_accounts " +
+        "scopes (grant them and reinstall if missing).",
       inputSchema: {
         store: z.string().optional().describe("Store key (default store if omitted)."),
         status: z.enum(["open", "all"]).optional().describe("open (default) or all."),
@@ -192,7 +193,8 @@ export function createMcpServer() {
       description:
         "Shopify Payments: current balance and recent payouts with status " +
         "(scheduled / in transit / paid) — \"when does my money land?\". Requires " +
-        "the read_shopify_payments_payouts scope (grant it and reinstall if missing).",
+        "the read_shopify_payments_payouts AND read_shopify_payments_accounts " +
+        "scopes (grant them and reinstall if missing).",
       inputSchema: {
         store: z.string().optional().describe("Store key (default store if omitted)."),
         limit: z.number().int().min(1).max(20).optional().describe("Max payouts (default 5)."),

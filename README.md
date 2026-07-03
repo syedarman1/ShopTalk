@@ -149,7 +149,7 @@ Shopify store, and Node 22+.
 
 ### 1. Create a Shopify app (client-credentials)
 1. In the Shopify **[Dev Dashboard](https://dev.shopify.com)**, create an app under your org.
-2. Give it read scopes — `read_orders`, `read_products`, `read_customers` (plus `read_shopify_payments_disputes` and `read_shopify_payments_payouts` if you want chargebacks/payouts) — and **release** the version.
+2. Give it read scopes — `read_orders`, `read_products`, `read_customers` (plus `read_shopify_payments_disputes`, `read_shopify_payments_payouts`, **and** `read_shopify_payments_accounts` if you want chargebacks/payouts — the accounts scope gates the `shopifyPaymentsAccount` field itself) — and **release** the version.
 3. Install it on your store and copy the **Client ID** and **Client Secret** (`shpss_…`).
 4. Note your store's `*.myshopify.com` domain (Settings → Domains).
 
