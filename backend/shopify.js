@@ -61,6 +61,7 @@ export function periodToRange(period, now, timeZone = "UTC") {
 export function shapeOrder(node) {
   const money = node.currentTotalPriceSet?.shopMoney ?? {};
   return {
+    id: node.id ?? null,
     name: node.name,
     createdAt: node.createdAt,
     total: money.amount != null ? Number(money.amount) : null,
@@ -282,7 +283,7 @@ export async function shopifyGraphQL(store, query, variables = {}) {
 }
 
 const ORDER_FIELDS = `
-  name createdAt displayFulfillmentStatus displayFinancialStatus test cancelledAt
+  id name createdAt displayFulfillmentStatus displayFinancialStatus test cancelledAt
   currentTotalPriceSet { shopMoney { amount currencyCode } }
   customer { displayName }
 `;

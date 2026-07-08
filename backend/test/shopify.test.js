@@ -82,6 +82,7 @@ test("periodToRange defaults to UTC when no timezone given", () => {
 
 test("shapeOrder flattens a GraphQL order node", () => {
   const node = {
+    id: "gid://shopify/Order/1",
     name: "#1001",
     createdAt: "2026-06-20T10:00:00Z",
     displayFulfillmentStatus: "UNFULFILLED",
@@ -90,6 +91,7 @@ test("shapeOrder flattens a GraphQL order node", () => {
     customer: { displayName: "Ada Lovelace" },
   };
   assert.deepEqual(shapeOrder(node), {
+    id: "gid://shopify/Order/1",
     name: "#1001",
     createdAt: "2026-06-20T10:00:00Z",
     total: 42.5,
