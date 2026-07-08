@@ -25,10 +25,11 @@ store things the way they'd text a co-founder — "what's selling?", "any orders
 haven't shipped?", "who are my repeat customers?" — and get an answer in seconds,
 from their phone, without opening anything.
 
-Today it's **read-only** — safe to text without ever changing your store — and
-focused on the questions merchants actually ask. It's built to grow: write
-actions (fulfilling orders, adjusting inventory) and richer analytics are the
-natural next steps.
+Reads are the default — asking questions can never change your store. Two
+write actions exist (cancel+refund an order, adjust inventory), and each one
+requires **texting back a one-time confirmation code** before anything
+executes: a misread text still can't change anything; only a deliberate
+confirmation can.
 
 ---
 
@@ -47,7 +48,7 @@ an outside tool or data source in a consistent way. A program that speaks MCP
 exposes a set of **tools** the AI can call. Poke acts as an **MCP host**: you add
 an integration (a built-in "recipe" or any custom MCP server URL), Poke
 discovers the tools that server exposes, and it calls them when a text needs one.
-**ShopTalk is one such custom MCP server** — it exposes fourteen read-only tools
+**ShopTalk is one such custom MCP server** — it exposes seventeen tools
 backed by the Shopify Admin API, and Poke is the client that calls them when you
 text a question about your store.
 
@@ -62,7 +63,7 @@ queries Shopify and returns the data → Poke replies in plain English.
 
 ---
 
-## What you can ask (the fourteen tools)
+## What you can ask (the seventeen tools)
 
 | Tool | The question it answers |
 |------|--------------------------|
@@ -76,15 +77,19 @@ queries Shopify and returns the data → Poke replies in plain English.
 | `run_query` | Anything else — a read-only Admin GraphQL escape hatch, validated locally against the store's schema before executing (mutations rejected) |
 | `get_schema` | "What fields does Order have?" — schema lookup so `run_query` never guesses |
 | `get_shop_info` | Store basics — name, domain, currency, timezone, plan |
+| `propose_cancel_refund` | "Cancel #2176 and refund it" — **stages only**: returns a summary + one-time code; nothing executes |
+| `propose_inventory_adjust` | "Set the hoodie stock down 3" — **stages only**, same code ritual |
+| `confirm_action` | Executes a staged action — **only** when you text back its code (single-use, 15-min expiry) |
 | `get_orders` | "Show my recent orders" / "anything unfulfilled?" |
 | `get_order` | "What's in order #1042?" |
 | `search_products` | "Find my hoodie" / "what do I sell?" |
 | `search_customers` | "Who are my repeat customers?" |
 
-Every tool today is **read-only** — ShopTalk cannot change, create, or delete
-anything in the store, enforced by the read-only scopes the app is granted, so a misread text
-can never modify your data. Writes are a deliberate next step, added the same
-way: one new tool at a time, behind the same MCP interface.
+Fourteen tools are pure reads. The two write actions never execute on first
+ask: the `propose_*` tool stages the change and returns a one-time code, and
+only your reply containing that code (via `confirm_action`) executes it —
+codes are single-use and expire in 15 minutes. The `run_query` escape hatch
+rejects mutations outright; writes have exactly one, deliberate door.
 
 ---
 
@@ -109,7 +114,8 @@ ShopTalk is a production-shaped full-stack project. Highlights:
 - **Correctness details that matter** — sales windows are computed in the
   *store's own timezone* (so "today" means the merchant's today, not UTC); large
   result sets surface a "capped" flag instead of silently undercounting.
-- **Security-conscious** — read-only scopes only; `/mcp` requires a shared
+- **Security-conscious** — reads by default, writes only via texted one-time
+  confirmation codes; `/mcp` requires a shared
   secret and **fails closed to loopback-only** when none is set; credentials
   live only in environment variables, never in the repo; the backend surface is
   deliberately tiny (the MCP endpoint plus a health check).
@@ -127,7 +133,8 @@ GraphQL · Next.js 14 / React 18 · Tailwind. Backend deployable to Railway/Rend
 backend/
   server.js      Express: MCP-over-HTTP at /mcp (auth-gated) + /api/health
   auth.js        /mcp shared-secret check (fails closed to loopback)
-  mcp-tools.js   the 14 read-only MCP tools (createMcpServer factory)
+  mcp-tools.js   the 17 MCP tools — reads + confirm-gated writes (createMcpServer factory)
+  actions.js     staged write actions: one-time codes, TTL, executors
   shopify.js     Admin GraphQL client + OAuth token exchange/cache + read fns
   stores.js      multi-store registry (parses SHOPIFY_STORES)
   test/          unit tests (node --test)
@@ -151,7 +158,7 @@ Shopify store, and Node 22+.
 
 ### 1. Create a Shopify app (client-credentials)
 1. In the Shopify **[Dev Dashboard](https://dev.shopify.com)**, create an app under your org.
-2. Give it read scopes — `read_orders`, `read_products`, `read_customers`, plus `read_all_orders` if you want chargeback sweeps and history beyond the 60-day order window (the payments scopes `read_shopify_payments_payouts`/`_accounts` enable `get_payouts`, but note some Dev Dashboard app types won't grant `_accounts`) — and **release** the version.
+2. Give it read scopes — `read_orders`, `read_products`, `read_customers`, plus `read_all_orders` for chargeback sweeps and history beyond the 60-day order window; add `write_orders`, `write_inventory`, `read_inventory`, `read_locations` only if you want the confirm-gated write tools (the payments scopes `read_shopify_payments_payouts`/`_accounts` enable `get_payouts`, but some Dev Dashboard app types won't grant `_accounts`) — and **release** the version.
 3. Install it on your store and copy the **Client ID** and **Client Secret** (`shpss_…`).
 4. Note your store's `*.myshopify.com` domain (Settings → Domains).
 
@@ -202,9 +209,9 @@ stream over long-lived HTTP connections.
 
 ## Roadmap
 
-ShopTalk starts read-only and safe by design — and it's built to grow. What's next:
+ShopTalk is reads-by-default and confirm-gated for writes — and still growing. What's next:
 
-- **Write actions** — fulfilling orders, adjusting inventory, tagging customers. Read-only today; the tool layer adds each cleanly behind the same MCP interface.
+- **More write actions** — cancel+refund and inventory adjustments shipped behind the propose→confirm ritual; order fulfillment and customer tagging are next, under the same one-time-code gate.
 - **Deeper analytics** — sales trend charts (today `get_sales` returns the period total + order count; best-seller ranking shipped as `get_best_sellers`).
 - **Flexible time ranges** — custom date ranges beyond the current `today` / `yesterday` / `7d` / `30d`.
 - **Larger result windows** — paginate past the current single 250-order page (a `capped` flag already surfaces overflow).

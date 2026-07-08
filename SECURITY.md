@@ -8,11 +8,13 @@ respond as soon as I can.
 
 ## Security posture
 
-- **Read-only:** ShopTalk uses only read Shopify scopes (`read_orders`,
-  `read_products`, `read_customers`, plus optionally the Shopify Payments read
-  scopes for disputes/payouts); it cannot modify, create, or delete store data.
-  The `run_query` tool rejects GraphQL mutations in code, and the read-only
-  scopes make writes impossible regardless.
+- **Reads by default, confirm-gated writes:** fourteen of seventeen tools are
+  pure reads. The two write actions (cancel+refund an order; adjust inventory)
+  never execute on first ask — a `propose_*` tool stages the change and returns
+  a one-time code, and only the merchant's reply containing that code executes
+  it (single-use, 15-minute expiry). The `run_query` escape hatch rejects
+  GraphQL mutations in code. Write scopes (`write_orders`, `write_inventory`)
+  are optional; without them the write tools fail with Shopify's access error.
 - **Credentials:** Shopify Client ID/Secret live only in environment variables and
   are never committed (`.env` is gitignored). The app exchanges them for a
   short-lived (24h) access token at runtime.
