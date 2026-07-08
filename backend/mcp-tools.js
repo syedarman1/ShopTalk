@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { listStoreSummaries } from "./stores.js";
 import { getSchemaType } from "./introspect.js";
+import { proposeCancelRefund, proposeInventoryAdjust, confirmAction } from "./actions.js";
 import {
   getSales,
   getSalesAllStores,
@@ -52,8 +53,13 @@ export function createMcpServer() {
         "sellers (get_best_sellers), customers (search_customers). For anything " +
         "else, use run_query with a read-only Admin GraphQL query. Prefer the " +
         "dedicated tools when one fits. If neither a tool nor run_query can " +
-        "answer, say so plainly — never invent numbers. Everything is " +
-        "read-only: there is no way to change store data.",
+        "answer, say so plainly — never invent numbers. Reads are the default. " +
+        "Exactly two write actions exist — cancel+refund an order, and adjust " +
+        "inventory — and they NEVER execute directly: the propose_* tool stages " +
+        "the action and returns a one-time code; present the summary and code " +
+        "to the merchant and STOP. Call confirm_action ONLY when the merchant's " +
+        "reply explicitly contains that code — never guess, reuse, or " +
+        "auto-confirm codes. Everything else cannot change store data.",
     }
   );
 
@@ -250,6 +256,86 @@ export function createMcpServer() {
     async ({ store }) => {
       try {
         const r = await getShopInfo(store);
+        return text(r);
+      } catch (err) {
+        return errorText(err.message);
+      }
+    }
+  );
+
+  // propose_cancel_refund ------------------------------------------------------
+  server.registerTool(
+    "propose_cancel_refund",
+    {
+      title: "Propose: Cancel + Refund Order",
+      description:
+        "STAGE a full cancel-and-refund for an order. Executes NOTHING — it " +
+        "returns a summary and a one-time code. Show both to the merchant and " +
+        "STOP; only confirm_action with their echoed code executes. Full " +
+        "refund + restock + customer notification; partial refunds are " +
+        "admin-only. Requires the write_orders scope.",
+      inputSchema: {
+        store: z.string().optional().describe("Store key (default store if omitted)."),
+        order: z.string().describe("Order number, with or without # (e.g. 2176)."),
+        reason: z.enum(["customer", "declined", "fraud", "inventory", "other", "staff"]).optional()
+          .describe("Cancellation reason (default other)."),
+      },
+    },
+    async ({ store, order, reason }) => {
+      try {
+        const r = await proposeCancelRefund(store, { order, reason });
+        return text(r);
+      } catch (err) {
+        return errorText(err.message);
+      }
+    }
+  );
+
+  // propose_inventory_adjust ---------------------------------------------------
+  server.registerTool(
+    "propose_inventory_adjust",
+    {
+      title: "Propose: Inventory Adjustment",
+      description:
+        "STAGE a stock correction (+/- units) for one product variant at one " +
+        "location. Executes NOTHING — returns a summary and a one-time code; " +
+        "show both to the merchant and STOP. Only confirm_action with their " +
+        "echoed code executes. Requires write_inventory (+ read_inventory, " +
+        "read_locations).",
+      inputSchema: {
+        store: z.string().optional().describe("Store key (default store if omitted)."),
+        product: z.string().describe("Product/variant search text — must match exactly one variant."),
+        delta: z.number().int().describe("Signed adjustment, e.g. -3 or 12. Not zero."),
+        location: z.string().optional().describe("Location name filter (default: first active location)."),
+      },
+    },
+    async ({ store, product, delta, location }) => {
+      try {
+        const r = await proposeInventoryAdjust(store, { product, delta, location });
+        return text(r);
+      } catch (err) {
+        return errorText(err.message);
+      }
+    }
+  );
+
+  // confirm_action ---------------------------------------------------------------
+  server.registerTool(
+    "confirm_action",
+    {
+      title: "Confirm Staged Action",
+      description:
+        "Execute a previously staged write action. ONLY call this when the " +
+        "merchant's own message explicitly contains the code (e.g. 'confirm " +
+        "R-7GK2'). Never guess, reuse, or auto-fill codes. Codes are " +
+        "single-use and expire after 15 minutes.",
+      inputSchema: {
+        code: z.string().describe("The one-time code the merchant texted back."),
+      },
+    },
+    async ({ code }) => {
+      try {
+        const r = await confirmAction(code);
         return text(r);
       } catch (err) {
         return errorText(err.message);
