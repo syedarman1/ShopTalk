@@ -204,6 +204,8 @@ export async function getShopTimezone(store) {
 
 /** Get a valid Admin API access token for the store, exchanging/refreshing as needed. */
 export async function getAccessToken(store) {
+  // Multi-tenant: a caller (cloud/) may inject the shop's OAuth token directly.
+  if (store.accessToken) return store.accessToken;
   const cached = tokenCache.get(store.key);
   if (cached && Date.now() < cached.expiresAt) return cached.token;
 
@@ -259,6 +261,12 @@ export async function shopifyGraphQL(store, query, variables = {}) {
       continue;
     }
     if (res.status === 401 || res.status === 403) {
+      if (store.accessToken) {
+        throw new Error(
+          `Shopify token was rejected for "${store.key}" (HTTP ${res.status}). ` +
+            "The shop's authorization may have been revoked — reinstall may be required."
+        );
+      }
       tokenCache.delete(store.key);
       if (!authRetried) { authRetried = true; continue; }
       throw new Error(

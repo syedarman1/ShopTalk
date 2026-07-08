@@ -136,6 +136,39 @@ test("a tiny expires_in still yields a positive token-cache TTL", async (t) => {
   assert.equal(exchanges, 1); // floored TTL — not an instantly-expired entry
 });
 
+const injected = (key) => ({
+  key, shopDomain: `${key}.myshopify.com`, apiVersion: "2026-01", accessToken: "oauth-tenant-token",
+});
+
+test("an injected accessToken is used directly — no client-credentials exchange", async (t) => {
+  let oauthCalls = 0, sentToken = null;
+  t.mock.method(globalThis, "fetch", async (url, init = {}) => {
+    if (String(url).includes("/oauth/access_token")) { oauthCalls += 1; return json({ access_token: "SHOULD-NOT-USE", expires_in: 86399 }); }
+    sentToken = init.headers?.["X-Shopify-Access-Token"];
+    return json({ data: { ok: true } });
+  });
+  const data = await shopifyGraphQL(injected("t10"), `{ ok }`);
+  assert.deepEqual(data, { ok: true });
+  assert.equal(oauthCalls, 0);
+  assert.equal(sentToken, "oauth-tenant-token");
+});
+
+test("getAccessToken returns an injected token as-is", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => { throw new Error("no network for injected tokens"); });
+  assert.equal(await getAccessToken(injected("t11")), "oauth-tenant-token");
+});
+
+test("a 401 on an injected token fails clearly without a retry loop", async (t) => {
+  let gql = 0;
+  t.mock.method(globalThis, "fetch", async (url) => {
+    if (String(url).includes("/oauth/access_token")) throw new Error("must not exchange");
+    gql += 1;
+    return json({}, 401);
+  });
+  await assert.rejects(() => shopifyGraphQL(injected("t12"), `{ ok }`), /token was rejected/i);
+  assert.equal(gql, 1); // no retry — refreshing a static token can't help
+});
+
 test("getSalesAllStores keeps healthy stores and reports failures", async (t) => {
   const ORDERS = { data: { orders: { edges: [
     { node: {
