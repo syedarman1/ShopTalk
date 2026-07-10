@@ -30,6 +30,14 @@ test("inventory actions get the I- prefix", () => {
   assert.match(code, /^I-/);
 });
 
+test("confirm codes are isolated by namespace (tenant safety)", () => {
+  _clearPending();
+  const a = stageAction("cancel_refund", "shopA", { orderName: "#A" }, { namespace: "shop:1" });
+  assert.throws(() => takeAction(a.code, "shop:2"), /never existed|used already/i);
+  const got = takeAction(a.code, "shop:1");
+  assert.equal(got.payload.orderName, "#A");
+});
+
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json" } });
 const TOKEN_OK = { access_token: "tok", scope: "read_orders", expires_in: 86399 };

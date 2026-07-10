@@ -2,6 +2,8 @@
 // Stores are configured via the SHOPIFY_STORES env var: a JSON array of
 // { key, label, shopDomain, clientId, clientSecret, apiVersion? } objects.
 
+import { boundStore } from "./context.js";
+
 const DEFAULT_API_VERSION = "2026-01";
 
 /**
@@ -47,12 +49,16 @@ let cache = null;
 
 /** Read stores from process.env once, then memoize. */
 export function getStores() {
+  const bound = boundStore();
+  if (bound) return [bound]; // multi-tenant: the request's single shop
   if (!cache) cache = parseStoresEnv(process.env);
   return cache;
 }
 
 /** Resolve a store by key, or the first store if no key given. */
 export function resolveStore(key) {
+  const bound = boundStore();
+  if (bound) return bound; // multi-tenant: ignore the tool's store arg, use the bound shop
   const stores = getStores();
   if (!key) return stores[0];
   const found = stores.find((s) => s.key === key);

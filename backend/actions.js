@@ -4,9 +4,12 @@
 import { randomBytes } from "node:crypto";
 import { resolveStore } from "./stores.js";
 import { shopifyGraphQL, getOrder } from "./shopify.js";
+import { boundNamespace } from "./context.js";
 
 export const PENDING_TTL_MS = 15 * 60 * 1000;
-const pending = new Map(); // CODE -> { kind, store, payload, expiresAt }
+const pending = new Map(); // `${namespace} ${CODE}` -> { kind, store, payload, expiresAt }
+// A single tenant's request never sees another tenant's codes: the map key is
+// namespaced (empty string = single-tenant/self-host, unchanged).
 
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTVWXYZ23456789"; // no 0/O/1/I/L lookalikes
 function makeCode(prefix) {
@@ -16,22 +19,23 @@ function makeCode(prefix) {
   return `${prefix}-${s}`;
 }
 
-export function stageAction(kind, storeKey, payload, { ttlMs = PENDING_TTL_MS, prefix } = {}) {
+export function stageAction(kind, storeKey, payload, { ttlMs = PENDING_TTL_MS, prefix, namespace = boundNamespace() } = {}) {
   const code = makeCode(prefix ?? (kind === "cancel_refund" ? "R" : "I"));
   const expiresAtMs = Date.now() + ttlMs;
-  pending.set(code, { kind, store: storeKey ?? null, payload, expiresAt: expiresAtMs });
+  pending.set(`${namespace} ${code}`, { kind, store: storeKey ?? null, payload, expiresAt: expiresAtMs });
   return { code, expiresAt: new Date(expiresAtMs).toISOString() };
 }
 
-export function takeAction(code) {
-  const key = String(code).trim().toUpperCase();
-  const action = pending.get(key);
+export function takeAction(code, namespace = boundNamespace()) {
+  const shown = String(code).trim().toUpperCase();
+  const mapKey = `${namespace} ${shown}`;
+  const action = pending.get(mapKey);
   if (!action) {
-    throw new Error(`No pending action with code "${key}" — it may have been used already or never existed. Propose again.`);
+    throw new Error(`No pending action with code "${shown}" — it may have been used already or never existed. Propose again.`);
   }
-  pending.delete(key); // single-use: delete before execute
+  pending.delete(mapKey); // single-use: delete before execute
   if (Date.now() > action.expiresAt) {
-    throw new Error(`Code "${key}" expired (codes last 15 minutes). Propose the action again.`);
+    throw new Error(`Code "${shown}" expired (codes last 15 minutes). Propose the action again.`);
   }
   return action;
 }
