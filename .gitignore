@@ -10,5 +10,8 @@ frontend/out/
 .env
 .env.local
 
+# cloud service local DB (tenant tokens — never commit)
+cloud/data/
+
 # local agent settings
 .claude/
