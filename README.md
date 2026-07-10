@@ -151,6 +151,25 @@ commit history shows that evolution step by step.
 
 ---
 
+## ShopTalk Cloud (multi-tenant — in progress)
+
+There are two ways to run ShopTalk:
+
+- **Self-host (`backend/`)** — one store, your own keys via env vars. Simple,
+  private, recommended for a single merchant. This is what the rest of this
+  README covers, and it's unchanged.
+- **ShopTalk Cloud (`cloud/`)** — one hosted service serving *many* merchants,
+  so ShopTalk can be published as a Poke Kitchen template. A merchant installs
+  via Shopify OAuth; the App stores only their `.myshopify.com` domain and an
+  **AES-256-GCM-encrypted** access token, and binds each request to exactly one
+  shop (tenant isolation is verified end-to-end in `cloud/test/mcp.test.js`).
+  The tool layer is reused from `backend/` verbatim — one source of truth.
+
+Cloud is under active construction and gated on a public Shopify app + Shopify's
+protected-customer-data review. See
+[`docs/superpowers/specs/2026-07-08-cloud-multitenant-design.md`](docs/superpowers/specs/2026-07-08-cloud-multitenant-design.md)
+and [PRIVACY.md](PRIVACY.md).
+
 ## Run it yourself
 
 **Requirements:** a [Poke](https://poke.com) account (the free tier works), a

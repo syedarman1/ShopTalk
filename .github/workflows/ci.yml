@@ -34,3 +34,21 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+  cloud:
+    runs-on: ubuntu-latest
+    env:
+      CLOUD_ENC_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: cloud/package-lock.json
+      # cloud reuses backend/'s tool layer, so backend deps must be present too.
+      - run: npm ci
+        working-directory: backend
+      - run: npm ci
+        working-directory: cloud
+      - run: npm test
+        working-directory: cloud
