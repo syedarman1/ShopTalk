@@ -130,6 +130,15 @@ export function createApp(db) {
   });
   webhook("/webhooks/customers/redact", (_req, res) => res.status(200).json({ ok: true, note: "No customer data retained." }));
   webhook("/webhooks/customers/data_request", (_req, res) => res.status(200).json({ ok: true, note: "No customer data retained." }));
+  // Unified compliance endpoint — Shopify's canonical model is ONE URI with the
+  // topic in the X-Shopify-Topic header. Kept alongside the per-topic paths so
+  // either dashboard style (single URL or per-topic) works.
+  webhook("/webhooks", (req, res, p) => {
+    const topic = req.get("X-Shopify-Topic") || "";
+    const shop = p.shop_domain || p.domain || req.get("X-Shopify-Shop-Domain");
+    if ((topic === "shop/redact" || topic === "app/uninstalled") && shop) markUninstalled(db, shop);
+    res.status(200).json({ ok: true });
+  });
 
   app.use(express.json());
 

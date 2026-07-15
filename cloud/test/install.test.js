@@ -89,6 +89,25 @@ test("POST /webhooks/app/uninstalled verifies HMAC and wipes the token", async (
   } finally { s.close(); }
 });
 
+test("POST /webhooks (unified compliance) verifies HMAC and handles topics by header", async () => {
+  const db = openCloudDb(":memory:");
+  upsertShop(db, { shopDomain: "acme.myshopify.com", accessToken: "T", scopes: "x" });
+  const { s, port } = await listen(createApp(db));
+  try {
+    const body = JSON.stringify({ shop_domain: "acme.myshopify.com" });
+    const hmac = createHmac("sha256", "csecret").update(body).digest("base64");
+    const ok = await realFetch(`http://127.0.0.1:${port}/webhooks`, {
+      method: "POST", headers: { "Content-Type": "application/json", "X-Shopify-Hmac-Sha256": hmac, "X-Shopify-Topic": "shop/redact" }, body,
+    });
+    assert.equal(ok.status, 200);
+    assert.equal(getShopByDomain(db, "acme.myshopify.com").access_token_enc, null); // shop/redact wiped the token
+    const bad = await realFetch(`http://127.0.0.1:${port}/webhooks`, {
+      method: "POST", headers: { "Content-Type": "application/json", "X-Shopify-Hmac-Sha256": "nope", "X-Shopify-Topic": "shop/redact" }, body,
+    });
+    assert.equal(bad.status, 401);
+  } finally { s.close(); }
+});
+
 test("GET /privacy serves the rendered privacy policy", async () => {
   const { s, port } = await listen(createApp(openCloudDb(":memory:")));
   try {
