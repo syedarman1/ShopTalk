@@ -1,0 +1,23 @@
+<svg width="1200" height="1200" viewBox="0 0 1200 1200" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="1200" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6D5AF0"/><stop offset="1" stop-color="#8B5CF6"/>
+    </linearGradient>
+    <linearGradient id="bag" x1="600" y1="500" x2="600" y2="912" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#ECEBFF"/>
+    </linearGradient>
+    <radialGradient id="hi" cx="0.3" cy="0.24" r="0.85">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.20"/><stop offset="0.6" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="1200" rx="270" fill="url(#bg)"/>
+  <rect width="1200" height="1200" rx="270" fill="url(#hi)"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="38" stroke-linecap="round">
+    <path d="M470 512 C470 352 590 352 590 512"/>
+    <path d="M610 512 C610 352 730 352 730 512"/>
+  </g>
+  <rect x="384" y="500" width="432" height="412" rx="80" fill="url(#bag)"/>
+  <circle cx="512" cy="720" r="31" fill="#6D5AF0"/>
+  <circle cx="600" cy="720" r="31" fill="#7C6BF3"/>
+  <circle cx="688" cy="720" r="31" fill="#8B5CF6"/>
+</svg>
