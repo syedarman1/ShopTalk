@@ -34,7 +34,7 @@ test("GET /install rejects a non-myshopify shop", async () => {
   } finally { s.close(); }
 });
 
-test("GET /auth/callback verifies HMAC+state, stores an encrypted token, issues creds", async (t) => {
+test("GET /auth/callback verifies HMAC+state, stores an encrypted token, redirects to app home revealing the key once", async (t) => {
   const db = openCloudDb(":memory:");
   const state = createState(db, "acme.myshopify.com");
   t.mock.method(globalThis, "fetch", async (url, init) => {
@@ -46,11 +46,16 @@ test("GET /auth/callback verifies HMAC+state, stores an encrypted token, issues 
   try {
     const q = { shop: "acme.myshopify.com", code: "authcode", state, timestamp: "1" };
     const hmac = signQuery(q);
-    const res = await realFetch(`http://127.0.0.1:${port}/auth/callback?shop=${q.shop}&code=${q.code}&state=${q.state}&timestamp=${q.timestamp}&hmac=${hmac}`);
-    assert.equal(res.status, 200);
+    const res = await realFetch(`http://127.0.0.1:${port}/auth/callback?shop=${q.shop}&code=${q.code}&state=${q.state}&timestamp=${q.timestamp}&hmac=${hmac}`, { redirect: "manual" });
+    assert.equal(res.status, 302);
+    const token = new URL(res.headers.get("location")).searchParams.get("t");
+    assert.ok(token);
     const row = getShopByDomain(db, "acme.myshopify.com");
     assert.ok(row && row.access_token_enc && row.access_token_enc !== "TENANT-TOKEN");
-    assert.match(await res.text(), /mcp add/);
+    const home = await realFetch(`http://127.0.0.1:${port}/home?t=${token}`);
+    assert.equal(home.status, 200);
+    assert.match(await home.text(), /mcp add/);
+    assert.doesNotMatch(await (await realFetch(`http://127.0.0.1:${port}/home?t=${token}`)).text(), /mcp add/); // single-use
   } finally { s.close(); }
 });
 

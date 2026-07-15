@@ -5,6 +5,7 @@
 import express from "express";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { randomBytes } from "node:crypto";
 import { marked } from "marked";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createMcpServer } from "../backend/mcp-tools.js";
@@ -43,6 +44,28 @@ function privacyHtml() {
   return _privacyHtml;
 }
 
+const escapeHtml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+// The app's merchant-facing "home" (non-embedded UI): the post-auth redirect
+// lands here, and it reveals the one-time Poke connection command when present.
+function appHome({ command }) {
+  const key = command
+    ? `<p>Connect Poke with this one-time command:</p><pre>${escapeHtml(command)}</pre><p class="muted">Copy it now — the key is shown only once.</p>`
+    : `<p class="muted">ShopTalk is connected. Your Poke connection key is shown once, right after installing — reinstall from your store to generate a new one.</p>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ShopTalk</title>` +
+    `<style>body{max-width:44rem;margin:3rem auto;padding:0 1.2rem;font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#1b1b1b}` +
+    `.brand{display:flex;align-items:center;gap:.6rem;font-weight:700;font-size:1.35rem}` +
+    `.logo{width:40px;height:40px;border-radius:11px;background:linear-gradient(135deg,#6D5AF0,#8B5CF6)}` +
+    `h1{font-size:1.5rem;margin:1.4rem 0 .4rem}h2{font-size:1.1rem;margin:1.6rem 0 .4rem}` +
+    `pre{background:#f4f4f5;padding:.9rem 1rem;border-radius:10px;overflow-x:auto;font-size:.86rem}` +
+    `.muted{color:#6b7280}ul{padding-left:1.1rem}li{margin:.2rem 0}</style></head><body>` +
+    `<div class="brand"><div class="logo"></div>ShopTalk</div>` +
+    `<h1>ShopTalk is connected \u{1F389}</h1>${key}` +
+    `<h2>How to use it</h2><p>Text your store from the Messages app on your iPhone, through Poke. For example:</p>` +
+    `<ul><li>&ldquo;How did sales go last week?&rdquo;</li><li>&ldquo;Any open chargebacks?&rdquo;</li><li>&ldquo;What inventory is low?&rdquo;</li><li>&ldquo;Cancel and refund order #1042&rdquo; — ShopTalk asks you to confirm first.</li></ul>` +
+    `<p class="muted">Reads your store only when you ask. Writes always require a one-time confirmation code.</p></body></html>`;
+}
+
 // Refresh an expiring offline token when it's within REFRESH_BUFFER_MS of
 // expiry, persisting the rotated set. Non-expiring tokens (no token_expires_at)
 // and still-valid ones pass through untouched. On refresh failure we fall back
@@ -77,6 +100,12 @@ function forceAccept(req) {
 
 export function createApp(db) {
   const app = express();
+
+  // One-time reveal of the Poke connection command, carried across the
+  // post-auth redirect (in-memory; consumed within seconds of install).
+  const reveals = new Map();
+  const stageReveal = (command) => { const t = randomBytes(18).toString("base64url"); reveals.set(t, { command, exp: Date.now() + 600000 }); return t; };
+  const takeReveal = (t) => { const r = reveals.get(t); if (!r) return null; reveals.delete(t); return Date.now() > r.exp ? null : r.command; };
 
   // Webhooks need the RAW body for HMAC — mount before express.json().
   const raw = express.raw({ type: "application/json" });
@@ -121,6 +150,10 @@ export function createApp(db) {
   // Hosted privacy policy (required for the app listing + protected-data review).
   app.get("/privacy", (_req, res) => res.type("html").send(privacyHtml()));
 
+  // Merchant-facing app home (non-embedded UI). The post-auth redirect lands
+  // here; ?t=<token> reveals the one-time connect command.
+  app.get("/home", (req, res) => res.type("html").send(appHome({ command: req.query.t ? takeReveal(String(req.query.t)) : null })));
+
   // --- Shopify OAuth: merchant install ---
   app.get("/install", (req, res) => {
     const shop = String(req.query.shop || "");
@@ -139,11 +172,10 @@ export function createApp(db) {
       const { accessToken, scopes, refreshToken, expiresIn } = await exchangeCodeForToken(shop, String(req.query.code), config);
       const row = upsertShop(db, { shopDomain: shop, accessToken, scopes, refreshToken, expiresIn });
       const { clientId, secret } = issueMcpCredential(db, row.id);
-      res.status(200).send(
-        `<h2>ShopTalk connected \u{1F389}</h2><p>Connect Poke with:</p>` +
-        `<pre>npx poke@latest mcp add ${config.appUrl}/mcp -n ShopTalk -k ${clientId}:${secret}</pre>` +
-        `<p>Save this key — it is shown once.</p>`
-      );
+      const command = `npx poke@latest mcp add ${config.appUrl}/mcp -n ShopTalk -k ${clientId}:${secret}`;
+      // Redirect to the app UI (satisfies the review check "redirects to app UI
+      // after authentication"); the token reveals the key once on /home.
+      return res.redirect(302, `${config.appUrl}/home?t=${stageReveal(command)}`);
     } catch (err) {
       res.status(502).send(`Install failed: ${err.message}`);
     }
