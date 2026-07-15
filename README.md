@@ -170,6 +170,20 @@ protected-customer-data review. See
 [`docs/superpowers/specs/2026-07-08-cloud-multitenant-design.md`](docs/superpowers/specs/2026-07-08-cloud-multitenant-design.md)
 and [PRIVACY.md](PRIVACY.md).
 
+The public Shopify app is configured to point at these `cloud/` routes (swap in
+your deployed host):
+
+- **App URL:** `https://<cloud-host>/install`
+- **Redirect URL:** `https://<cloud-host>/auth/callback`
+- **Webhooks** (mandatory + GDPR): `/webhooks/app/uninstalled`,
+  `/webhooks/customers/data_request`, `/webhooks/customers/redact`,
+  `/webhooks/shop/redact`
+
+Config lives in env (`cloud/.env.example`): the app's Client ID/Secret, the
+service's public URL, the install scopes, and `CLOUD_ENC_KEY` (the at-rest token
+encryption key — `openssl rand -hex 32`). The SQLite DB belongs on a persistent
+volume.
+
 ## Run it yourself
 
 **Requirements:** a [Poke](https://poke.com) account (the free tier works), a
