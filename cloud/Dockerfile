@@ -15,6 +15,8 @@ RUN cd cloud && npm ci --omit=dev
 
 COPY backend/ backend/
 COPY cloud/ cloud/
+# Served (rendered) at /privacy — keep it in the image.
+COPY PRIVACY.md PRIVACY.md
 
 ENV NODE_ENV=production
 ENV PORT=4700

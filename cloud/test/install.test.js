@@ -83,3 +83,15 @@ test("POST /webhooks/app/uninstalled verifies HMAC and wipes the token", async (
     assert.equal(bad.status, 401);
   } finally { s.close(); }
 });
+
+test("GET /privacy serves the rendered privacy policy", async () => {
+  const { s, port } = await listen(createApp(openCloudDb(":memory:")));
+  try {
+    const res = await realFetch(`http://127.0.0.1:${port}/privacy`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get("content-type") || "", /text\/html/);
+    const html = await res.text();
+    assert.match(html, /Privacy Policy/);
+    assert.match(html, /syedarman2003@gmail.com/);
+  } finally { s.close(); }
+});

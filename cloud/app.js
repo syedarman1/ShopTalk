@@ -3,6 +3,9 @@
 // context, so backend/'s tools transparently query the right store with the
 // right token. Reuses the single-tenant tool layer verbatim.
 import express from "express";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { marked } from "marked";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createMcpServer } from "../backend/mcp-tools.js";
 import { runInTenant } from "../backend/context.js";
@@ -15,6 +18,29 @@ import { config } from "./config.js";
 import {
   installUrl, isValidShopDomain, verifyQueryHmac, verifyWebhookHmac, exchangeCodeForToken,
 } from "./oauth.js";
+
+// Rendered privacy policy — PRIVACY.md is the single source of truth; cached
+// after first render. Served at /privacy for the app listing + PCD review.
+let _privacyHtml = null;
+function privacyHtml() {
+  if (_privacyHtml) return _privacyHtml;
+  let body;
+  try {
+    const md = readFileSync(fileURLToPath(new URL("../PRIVACY.md", import.meta.url)), "utf8");
+    body = marked.parse(md);
+  } catch {
+    body = "<h1>ShopTalk — Privacy Policy</h1><p>Contact syedarman2003@gmail.com.</p>";
+  }
+  _privacyHtml =
+    `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
+    `<meta name="viewport" content="width=device-width,initial-scale=1">` +
+    `<title>ShopTalk — Privacy Policy</title>` +
+    `<style>body{max-width:44rem;margin:2.5rem auto;padding:0 1.2rem;` +
+    `font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#1b1b1b}` +
+    `h1,h2{line-height:1.25} code,pre{background:#f4f4f5;padding:.12em .35em;border-radius:4px} a{color:#2563eb}</style>` +
+    `</head><body>${body}</body></html>`;
+  return _privacyHtml;
+}
 
 // The streamable-HTTP transport needs both Accept types; force it.
 function forceAccept(req) {
@@ -73,6 +99,9 @@ export function createApp(db) {
     },
   }));
 
+  // Hosted privacy policy (required for the app listing + protected-data review).
+  app.get("/privacy", (_req, res) => res.type("html").send(privacyHtml()));
+
   // --- Shopify OAuth: merchant install ---
   app.get("/install", (req, res) => {
     const shop = String(req.query.shop || "");
@@ -114,6 +143,12 @@ export function createApp(db) {
   async function handleMcp(req, res) {
     const shop = authTenant(req);
     if (!shop) return res.status(401).json({ error: "unauthorized" });
+    // Access log: WHO (tenant) touched WHAT (tool/method) and WHEN — never the
+    // data itself. Satisfies the protected-data "log access to data" control.
+    const rpc = req.body && typeof req.body === "object" ? req.body : {};
+    const method = typeof rpc.method === "string" ? rpc.method : "unknown";
+    const tool = method === "tools/call" ? rpc.params?.name : undefined;
+    console.log(`[shoptalk-cloud] access ts=${new Date().toISOString()} shop=${shop.id} domain=${shop.shop_domain} method=${method}${tool ? ` tool=${tool}` : ""}`);
     forceAccept(req);
     const server = createMcpServer(); // identical to single-tenant; store comes from ALS
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
