@@ -66,6 +66,46 @@ function appHome({ command }) {
     `<p class="muted">Reads your store only when you ask. Writes always require a one-time confirmation code.</p></body></html>`;
 }
 
+// Verify a merchant-supplied Admin API token works for their store (cheap
+// authenticated call that succeeds with any valid token).
+async function validateShopifyToken(shopDomain, token) {
+  const v = process.env.SHOPIFY_API_VERSION || "2026-04";
+  const res = await fetch(`https://${shopDomain}/admin/api/${v}/shop.json`, {
+    headers: { "X-Shopify-Access-Token": token, Accept: "application/json" },
+  });
+  return res.ok;
+}
+
+// The Kitchen onboarding page: a merchant pastes their store + custom-app token
+// (no OAuth, no Shopify review) and gets back a Poke connection key.
+function connectPage({ error } = {}) {
+  const err = error ? `<p class="err">${escapeHtml(error)}</p>` : "";
+  const scopes = "read_orders, read_products, read_customers, read_inventory, read_locations, write_orders, write_inventory";
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect ShopTalk</title>` +
+    `<style>body{max-width:44rem;margin:3rem auto;padding:0 1.2rem;font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#1b1b1b}` +
+    `.brand{display:flex;align-items:center;gap:.6rem;font-weight:700;font-size:1.35rem}` +
+    `.logo{width:40px;height:40px;border-radius:11px;background:linear-gradient(135deg,#6D5AF0,#8B5CF6)}` +
+    `h1{font-size:1.5rem;margin:1.4rem 0 .4rem}h2{font-size:1.05rem;margin:1.6rem 0 .5rem}` +
+    `code{background:#f4f4f5;padding:.1em .35em;border-radius:5px;font-size:.9em}ol{padding-left:1.2rem}li{margin:.35rem 0}` +
+    `label{display:block;margin:.9rem 0 .3rem;font-weight:600}input{width:100%;box-sizing:border-box;padding:.7rem .8rem;border:1px solid #d1d5db;border-radius:9px;font-size:1rem}` +
+    `button{margin-top:1.2rem;background:#6D5AF0;color:#fff;border:0;padding:.75rem 1.4rem;border-radius:9px;font-size:1rem;font-weight:600;cursor:pointer}` +
+    `.err{color:#b91c1c;background:#fef2f2;padding:.7rem 1rem;border-radius:9px}.muted{color:#6b7280}a{color:#6D5AF0}</style></head><body>` +
+    `<div class="brand"><div class="logo"></div>ShopTalk</div>` +
+    `<h1>Connect your store</h1>` +
+    `<p>ShopTalk lets you text your Shopify store from Poke. Connect it with a token from your own Shopify admin — no app install needed.</p>` +
+    `<h2>1 &middot; Create a token in Shopify</h2>` +
+    `<ol><li>In your Shopify admin: <b>Settings &rarr; Apps and sales channels &rarr; Develop apps</b> (enable custom app development if prompted).</li>` +
+    `<li><b>Create an app</b>, then under <b>Configuration &rarr; Admin API scopes</b> enable: <code>${scopes}</code>.</li>` +
+    `<li><b>Install</b> the app, then under <b>API credentials</b> reveal and copy the <b>Admin API access token</b> (starts with <code>shpat_</code>) — shown once.</li></ol>` +
+    `<h2>2 &middot; Paste it here</h2>${err}` +
+    `<form method="post" action="/connect" autocomplete="off">` +
+    `<label>Store domain<input name="shop" placeholder="your-store.myshopify.com" autocapitalize="off" spellcheck="false"></label>` +
+    `<label>Admin API access token<input name="token" type="password" placeholder="shpat_..." autocomplete="off"></label>` +
+    `<button type="submit">Connect</button></form>` +
+    `<p class="muted" style="margin-top:1.4rem">Your token is stored encrypted and used only to answer your own requests. See our <a href="/privacy">privacy policy</a>.</p>` +
+    `</body></html>`;
+}
+
 // Refresh an expiring offline token when it's within REFRESH_BUFFER_MS of
 // expiry, persisting the rotated set. Non-expiring tokens (no token_expires_at)
 // and still-valid ones pass through untouched. On refresh failure we fall back
@@ -141,6 +181,7 @@ export function createApp(db) {
   });
 
   app.use(express.json());
+  app.use(express.urlencoded({ extended: false }));
 
   // Readiness probe: reports whether the required env vars reached this
   // process. Secret VALUES are never echoed (booleans only); clientId and
@@ -162,6 +203,25 @@ export function createApp(db) {
   // Merchant-facing app home (non-embedded UI). The post-auth redirect lands
   // here; ?t=<token> reveals the one-time connect command.
   app.get("/home", (req, res) => res.type("html").send(appHome({ command: req.query.t ? takeReveal(String(req.query.t)) : null })));
+
+  // --- Poke Kitchen onboarding: bring-your-own custom-app token (no OAuth) ---
+  app.get("/", (_req, res) => res.redirect(302, "/connect"));
+  app.get("/connect", (_req, res) => res.type("html").send(connectPage()));
+  app.post("/connect", async (req, res) => {
+    try {
+      const shop = String(req.body.shop || "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+      const token = String(req.body.token || "").trim();
+      if (!isValidShopDomain(shop)) return res.status(400).type("html").send(connectPage({ error: "Enter a valid your-store.myshopify.com domain." }));
+      if (!token) return res.status(400).type("html").send(connectPage({ error: "Paste your Admin API access token." }));
+      if (!(await validateShopifyToken(shop, token))) return res.status(400).type("html").send(connectPage({ error: "That token didn't work for that store — double-check the domain and token." }));
+      const row = upsertShop(db, { shopDomain: shop, accessToken: token, scopes: null });
+      const { clientId, secret } = issueMcpCredential(db, row.id);
+      const command = `npx poke@latest mcp add ${config.appUrl}/mcp -n ShopTalk -k ${clientId}:${secret}`;
+      return res.type("html").send(appHome({ command }));
+    } catch (err) {
+      return res.status(502).type("html").send(connectPage({ error: `Connection failed: ${err.message}` }));
+    }
+  });
 
   // --- Shopify OAuth: merchant install ---
   app.get("/install", (req, res) => {

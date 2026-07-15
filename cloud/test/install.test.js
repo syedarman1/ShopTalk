@@ -120,6 +120,59 @@ test("GET /privacy serves the rendered privacy policy", async () => {
   } finally { s.close(); }
 });
 
+test("GET /connect renders the token-entry form", async () => {
+  const { s, port } = await listen(createApp(openCloudDb(":memory:")));
+  try {
+    const res = await realFetch(`http://127.0.0.1:${port}/connect`);
+    assert.equal(res.status, 200);
+    assert.match(await res.text(), /Connect your store/);
+  } finally { s.close(); }
+});
+
+test("POST /connect validates the token, stores it encrypted, and issues a Poke key", async (t) => {
+  const db = openCloudDb(":memory:");
+  t.mock.method(globalThis, "fetch", async (url) =>
+    String(url).includes("/admin/api/") && String(url).includes("shop.json")
+      ? new Response(JSON.stringify({ shop: { name: "Acme" } }), { status: 200 })
+      : new Response("no", { status: 404 }));
+  const { s, port } = await listen(createApp(db));
+  try {
+    const res = await realFetch(`http://127.0.0.1:${port}/connect`, {
+      method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ shop: "acme.myshopify.com", token: "shpat_valid" }).toString(),
+    });
+    assert.equal(res.status, 200);
+    assert.match(await res.text(), /mcp add/);
+    const row = getShopByDomain(db, "acme.myshopify.com");
+    assert.ok(row && row.access_token_enc && row.access_token_enc !== "shpat_valid"); // encrypted
+  } finally { s.close(); }
+});
+
+test("POST /connect rejects an invalid token without storing it", async (t) => {
+  const db = openCloudDb(":memory:");
+  t.mock.method(globalThis, "fetch", async () => new Response("unauthorized", { status: 401 }));
+  const { s, port } = await listen(createApp(db));
+  try {
+    const res = await realFetch(`http://127.0.0.1:${port}/connect`, {
+      method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ shop: "acme.myshopify.com", token: "shpat_bad" }).toString(),
+    });
+    assert.equal(res.status, 400);
+    assert.equal(getShopByDomain(db, "acme.myshopify.com"), undefined);
+  } finally { s.close(); }
+});
+
+test("POST /connect rejects a non-myshopify domain", async () => {
+  const { s, port } = await listen(createApp(openCloudDb(":memory:")));
+  try {
+    const res = await realFetch(`http://127.0.0.1:${port}/connect`, {
+      method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ shop: "evil.com", token: "shpat_x" }).toString(),
+    });
+    assert.equal(res.status, 400);
+  } finally { s.close(); }
+});
+
 test("ensureFreshToken refreshes an expiring token near expiry and persists the rotation", async (t) => {
   const db = openCloudDb(":memory:");
   const shop = upsertShop(db, { shopDomain: "acme.myshopify.com", accessToken: "OLD", scopes: "x", refreshToken: "RT1", expiresIn: 30 });
