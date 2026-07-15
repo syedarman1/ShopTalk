@@ -7,8 +7,8 @@ process.env.SHOPIFY_CLOUD_CLIENT_ID = "cid";
 process.env.SHOPIFY_CLOUD_CLIENT_SECRET = "csecret";
 process.env.SHOPIFY_CLOUD_APP_URL = "https://cloud.test";
 
-const { createApp } = await import("../app.js");
-const { openCloudDb, getShopByDomain, createState, upsertShop } = await import("../tenants.js");
+const { createApp, ensureFreshToken } = await import("../app.js");
+const { openCloudDb, getShopByDomain, createState, upsertShop, decryptToken, decryptRefreshToken } = await import("../tenants.js");
 
 const realFetch = globalThis.fetch;
 const listen = (app) => new Promise((r) => { const s = app.listen(0, () => r({ s, port: s.address().port })); });
@@ -94,4 +94,33 @@ test("GET /privacy serves the rendered privacy policy", async () => {
     assert.match(html, /Privacy Policy/);
     assert.match(html, /syedarman2003@gmail.com/);
   } finally { s.close(); }
+});
+
+test("ensureFreshToken refreshes an expiring token near expiry and persists the rotation", async (t) => {
+  const db = openCloudDb(":memory:");
+  const shop = upsertShop(db, { shopDomain: "acme.myshopify.com", accessToken: "OLD", scopes: "x", refreshToken: "RT1", expiresIn: 30 });
+  t.mock.method(globalThis, "fetch", async () =>
+    new Response(JSON.stringify({ access_token: "NEW", refresh_token: "RT2", expires_in: 3600 }), { status: 200 }));
+  const fresh = await ensureFreshToken(db, shop);
+  assert.equal(decryptToken(fresh), "NEW");
+  assert.equal(decryptRefreshToken(getShopByDomain(db, "acme.myshopify.com")), "RT2");
+});
+
+test("ensureFreshToken leaves a non-expiring token untouched (no network)", async (t) => {
+  const db = openCloudDb(":memory:");
+  const shop = upsertShop(db, { shopDomain: "acme.myshopify.com", accessToken: "AT", scopes: "x" });
+  let called = false;
+  t.mock.method(globalThis, "fetch", async () => { called = true; return new Response("{}", { status: 200 }); });
+  const out = await ensureFreshToken(db, shop);
+  assert.equal(called, false);
+  assert.equal(decryptToken(out), "AT");
+});
+
+test("ensureFreshToken leaves a still-valid expiring token untouched (no network)", async (t) => {
+  const db = openCloudDb(":memory:");
+  const shop = upsertShop(db, { shopDomain: "acme.myshopify.com", accessToken: "AT", scopes: "x", refreshToken: "RT", expiresIn: 3600 });
+  let called = false;
+  t.mock.method(globalThis, "fetch", async () => { called = true; return new Response("{}", { status: 200 }); });
+  await ensureFreshToken(db, shop);
+  assert.equal(called, false);
 });

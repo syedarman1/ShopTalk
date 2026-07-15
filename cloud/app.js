@@ -10,13 +10,14 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { createMcpServer } from "../backend/mcp-tools.js";
 import { runInTenant } from "../backend/context.js";
 import {
-  openCloudDb, resolveTenant, upsertShop, issueMcpCredential,
-  markUninstalled, createState, takeState,
+  openCloudDb, resolveTenant, upsertShop, updateShopTokens, decryptRefreshToken,
+  issueMcpCredential, markUninstalled, createState, takeState,
 } from "./tenants.js";
 import { tenantStore } from "./tenant-store.js";
 import { config } from "./config.js";
 import {
-  installUrl, isValidShopDomain, verifyQueryHmac, verifyWebhookHmac, exchangeCodeForToken,
+  installUrl, isValidShopDomain, verifyQueryHmac, verifyWebhookHmac,
+  exchangeCodeForToken, refreshAccessToken,
 } from "./oauth.js";
 
 // Rendered privacy policy — PRIVACY.md is the single source of truth; cached
@@ -40,6 +41,24 @@ function privacyHtml() {
     `h1,h2{line-height:1.25} code,pre{background:#f4f4f5;padding:.12em .35em;border-radius:4px} a{color:#2563eb}</style>` +
     `</head><body>${body}</body></html>`;
   return _privacyHtml;
+}
+
+// Refresh an expiring offline token when it's within REFRESH_BUFFER_MS of
+// expiry, persisting the rotated set. Non-expiring tokens (no token_expires_at)
+// and still-valid ones pass through untouched. On refresh failure we fall back
+// to the stored token rather than break the request.
+const REFRESH_BUFFER_MS = 120_000;
+export async function ensureFreshToken(db, shop) {
+  if (!shop.token_expires_at || Date.now() < shop.token_expires_at - REFRESH_BUFFER_MS) return shop;
+  const refreshToken = decryptRefreshToken(shop);
+  if (!refreshToken) return shop;
+  try {
+    const t = await refreshAccessToken(shop.shop_domain, refreshToken, config);
+    return updateShopTokens(db, shop.id, { accessToken: t.accessToken, refreshToken: t.refreshToken, expiresIn: t.expiresIn });
+  } catch (err) {
+    console.error(`[shoptalk-cloud] token refresh failed for shop=${shop.id}: ${err.message}`);
+    return shop;
+  }
 }
 
 // The streamable-HTTP transport needs both Accept types; force it.
@@ -117,8 +136,8 @@ export function createApp(db) {
       if (!verifyQueryHmac(config.clientSecret, req.query)) return res.status(401).send("HMAC verification failed.");
       const st = takeState(db, String(req.query.state || ""));
       if (!st || st.shop_domain !== shop) return res.status(400).send("Invalid or expired state.");
-      const { accessToken, scopes } = await exchangeCodeForToken(shop, String(req.query.code), config);
-      const row = upsertShop(db, { shopDomain: shop, accessToken, scopes });
+      const { accessToken, scopes, refreshToken, expiresIn } = await exchangeCodeForToken(shop, String(req.query.code), config);
+      const row = upsertShop(db, { shopDomain: shop, accessToken, scopes, refreshToken, expiresIn });
       const { clientId, secret } = issueMcpCredential(db, row.id);
       res.status(200).send(
         `<h2>ShopTalk connected \u{1F389}</h2><p>Connect Poke with:</p>` +
@@ -141,7 +160,7 @@ export function createApp(db) {
   }
 
   async function handleMcp(req, res) {
-    const shop = authTenant(req);
+    let shop = authTenant(req);
     if (!shop) return res.status(401).json({ error: "unauthorized" });
     // Access log: WHO (tenant) touched WHAT (tool/method) and WHEN — never the
     // data itself. Satisfies the protected-data "log access to data" control.
@@ -149,6 +168,7 @@ export function createApp(db) {
     const method = typeof rpc.method === "string" ? rpc.method : "unknown";
     const tool = method === "tools/call" ? rpc.params?.name : undefined;
     console.log(`[shoptalk-cloud] access ts=${new Date().toISOString()} shop=${shop.id} domain=${shop.shop_domain} method=${method}${tool ? ` tool=${tool}` : ""}`);
+    shop = await ensureFreshToken(db, shop); // refresh an expiring token before use
     forceAccept(req);
     const server = createMcpServer(); // identical to single-tenant; store comes from ALS
     const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });

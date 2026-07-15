@@ -54,5 +54,37 @@ export async function exchangeCodeForToken(shop, code, { clientId, clientSecret 
   if (!res.ok) throw new Error(`Token exchange failed for ${shop} (HTTP ${res.status}).`);
   const json = await res.json();
   if (!json.access_token) throw new Error(`No access_token returned for ${shop}.`);
-  return { accessToken: json.access_token, scopes: json.scope ?? null };
+  // New public apps (post 2026-04-01) receive EXPIRING offline tokens: an access
+  // token plus a refresh_token + expires_in. Older/self-host tokens omit these —
+  // capture whatever Shopify sends and let callers handle both shapes.
+  return {
+    accessToken: json.access_token,
+    scopes: json.scope ?? null,
+    refreshToken: json.refresh_token ?? null,
+    expiresIn: json.expires_in ?? null,
+  };
+}
+
+// Exchange a stored refresh token for a fresh access token
+// (grant_type=refresh_token). Shopify rotates the refresh token, so persist the
+// returned one; fall back to the supplied token if none comes back.
+export async function refreshAccessToken(shop, refreshToken, { clientId, clientSecret }) {
+  const res = await fetch(`https://${shop}/admin/oauth/access_token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      client_id: clientId,
+      client_secret: clientSecret,
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+    }),
+  });
+  if (!res.ok) throw new Error(`Token refresh failed for ${shop} (HTTP ${res.status}).`);
+  const json = await res.json();
+  if (!json.access_token) throw new Error(`No access_token returned on refresh for ${shop}.`);
+  return {
+    accessToken: json.access_token,
+    refreshToken: json.refresh_token ?? refreshToken,
+    expiresIn: json.expires_in ?? null,
+  };
 }

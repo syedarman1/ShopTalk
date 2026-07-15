@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 process.env.CLOUD_ENC_KEY = "b".repeat(64);
-const { openCloudDb, upsertShop, getShopByDomain, issueMcpCredential, resolveTenant, markUninstalled, decryptToken } = await import("../tenants.js");
+const { openCloudDb, upsertShop, updateShopTokens, getShopByDomain, issueMcpCredential, resolveTenant, markUninstalled, decryptToken, decryptRefreshToken } = await import("../tenants.js");
 const fresh = () => openCloudDb(":memory:");
 
 test("upsertShop stores an ENCRYPTED token and decryptToken recovers it", () => {
@@ -38,4 +38,42 @@ test("markUninstalled wipes the token and blocks resolution", () => {
   markUninstalled(db, "a.myshopify.com");
   assert.equal(db.prepare("SELECT access_token_enc FROM shops WHERE id=?").get(shop.id).access_token_enc, null);
   assert.equal(resolveTenant(db, clientId, secret), null);
+});
+
+test("upsertShop stores an ENCRYPTED refresh token + expiry; helpers recover them", () => {
+  const db = fresh();
+  const before = Date.now();
+  upsertShop(db, { shopDomain: "a.myshopify.com", accessToken: "AT", scopes: "x", refreshToken: "RT", expiresIn: 3600 });
+  const row = getShopByDomain(db, "a.myshopify.com");
+  assert.notEqual(row.refresh_token_enc, "RT"); // never plaintext
+  assert.equal(decryptRefreshToken(row), "RT");
+  assert.ok(row.token_expires_at >= before + 3600 * 1000);
+  assert.ok(row.token_expires_at <= Date.now() + 3600 * 1000);
+});
+
+test("updateShopTokens rotates the stored token set", () => {
+  const db = fresh();
+  const shop = upsertShop(db, { shopDomain: "a.myshopify.com", accessToken: "AT", scopes: "x", refreshToken: "RT", expiresIn: 3600 });
+  updateShopTokens(db, shop.id, { accessToken: "AT2", refreshToken: "RT2", expiresIn: 3600 });
+  const row = getShopByDomain(db, "a.myshopify.com");
+  assert.equal(decryptToken(row), "AT2");
+  assert.equal(decryptRefreshToken(row), "RT2");
+});
+
+test("a non-expiring token stores null refresh/expiry", () => {
+  const db = fresh();
+  upsertShop(db, { shopDomain: "a.myshopify.com", accessToken: "AT", scopes: "x" });
+  const row = getShopByDomain(db, "a.myshopify.com");
+  assert.equal(row.refresh_token_enc, null);
+  assert.equal(row.token_expires_at, null);
+  assert.equal(decryptRefreshToken(row), null);
+});
+
+test("markUninstalled also wipes the refresh token + expiry", () => {
+  const db = fresh();
+  upsertShop(db, { shopDomain: "a.myshopify.com", accessToken: "AT", scopes: "x", refreshToken: "RT", expiresIn: 3600 });
+  markUninstalled(db, "a.myshopify.com");
+  const row = getShopByDomain(db, "a.myshopify.com");
+  assert.equal(row.refresh_token_enc, null);
+  assert.equal(row.token_expires_at, null);
 });

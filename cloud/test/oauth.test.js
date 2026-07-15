@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 process.env.CLOUD_ENC_KEY = "d".repeat(64);
-const { installUrl, isValidShopDomain, verifyQueryHmac, verifyWebhookHmac } = await import("../oauth.js");
+const { installUrl, isValidShopDomain, verifyQueryHmac, verifyWebhookHmac, exchangeCodeForToken, refreshAccessToken } = await import("../oauth.js");
 const { openCloudDb, createState, takeState } = await import("../tenants.js");
 
 test("isValidShopDomain accepts real shops, rejects everything else", () => {
@@ -52,4 +52,43 @@ test("oauth state is single-use and carries its shop", () => {
   const row = takeState(db, state);
   assert.equal(row.shop_domain, "acme.myshopify.com");
   assert.equal(takeState(db, state), undefined); // single-use
+});
+
+test("exchangeCodeForToken captures refresh_token + expires_in when present", async (t) => {
+  t.mock.method(globalThis, "fetch", async () =>
+    new Response(JSON.stringify({ access_token: "AT", refresh_token: "RT", expires_in: 3600, scope: "read_orders" }), { status: 200 }));
+  const r = await exchangeCodeForToken("acme.myshopify.com", "code", { clientId: "c", clientSecret: "s" });
+  assert.equal(r.accessToken, "AT");
+  assert.equal(r.refreshToken, "RT");
+  assert.equal(r.expiresIn, 3600);
+});
+
+test("exchangeCodeForToken tolerates a non-expiring token (null refresh/expiry)", async (t) => {
+  t.mock.method(globalThis, "fetch", async () =>
+    new Response(JSON.stringify({ access_token: "AT", scope: "read_orders" }), { status: 200 }));
+  const r = await exchangeCodeForToken("acme.myshopify.com", "code", { clientId: "c", clientSecret: "s" });
+  assert.equal(r.accessToken, "AT");
+  assert.equal(r.refreshToken, null);
+  assert.equal(r.expiresIn, null);
+});
+
+test("refreshAccessToken posts grant_type=refresh_token and returns the rotated token", async (t) => {
+  let sent;
+  t.mock.method(globalThis, "fetch", async (_url, init) => {
+    sent = JSON.parse(init.body);
+    return new Response(JSON.stringify({ access_token: "AT2", refresh_token: "RT2", expires_in: 3600 }), { status: 200 });
+  });
+  const r = await refreshAccessToken("acme.myshopify.com", "RT1", { clientId: "c", clientSecret: "s" });
+  assert.equal(sent.grant_type, "refresh_token");
+  assert.equal(sent.refresh_token, "RT1");
+  assert.equal(r.accessToken, "AT2");
+  assert.equal(r.refreshToken, "RT2"); // rotated
+  assert.equal(r.expiresIn, 3600);
+});
+
+test("refreshAccessToken keeps the old refresh token if Shopify doesn't rotate", async (t) => {
+  t.mock.method(globalThis, "fetch", async () =>
+    new Response(JSON.stringify({ access_token: "AT2", expires_in: 3600 }), { status: 200 }));
+  const r = await refreshAccessToken("acme.myshopify.com", "RT1", { clientId: "c", clientSecret: "s" });
+  assert.equal(r.refreshToken, "RT1");
 });

@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS shops (
   shop_domain TEXT UNIQUE NOT NULL,
   access_token_enc TEXT,
   scopes TEXT,
+  refresh_token_enc TEXT,
+  token_expires_at INTEGER,
   installed_at TEXT DEFAULT (datetime('now')),
   uninstalled_at TEXT
 );
@@ -32,22 +34,45 @@ export function openCloudDb(path = process.env.CLOUD_DB || "./data/cloud.db") {
   if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
   const db = new Database(path);
   db.exec(SCHEMA);
+  // Migrate DBs created before expiring-token support (ALTER is a no-op if the
+  // column already exists).
+  ensureColumn(db, "shops", "refresh_token_enc", "TEXT");
+  ensureColumn(db, "shops", "token_expires_at", "INTEGER");
   return db;
+}
+
+function ensureColumn(db, table, col, decl) {
+  const has = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === col);
+  if (!has) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${decl}`);
 }
 
 const sha = (s) => createHash("sha256").update(String(s)).digest("hex");
 
-export function upsertShop(db, { shopDomain, accessToken, scopes }) {
+export function upsertShop(db, { shopDomain, accessToken, scopes, refreshToken = null, expiresIn = null }) {
   const enc = accessToken != null ? encrypt(accessToken) : null;
+  const refEnc = refreshToken != null ? encrypt(refreshToken) : null;
+  const expiresAt = expiresIn != null ? Date.now() + expiresIn * 1000 : null;
   db.prepare(
-    `INSERT INTO shops (shop_domain, access_token_enc, scopes, uninstalled_at)
-     VALUES (?, ?, ?, NULL)
+    `INSERT INTO shops (shop_domain, access_token_enc, scopes, refresh_token_enc, token_expires_at, uninstalled_at)
+     VALUES (?, ?, ?, ?, ?, NULL)
      ON CONFLICT(shop_domain) DO UPDATE SET
        access_token_enc = excluded.access_token_enc,
        scopes = excluded.scopes,
+       refresh_token_enc = excluded.refresh_token_enc,
+       token_expires_at = excluded.token_expires_at,
        uninstalled_at = NULL`
-  ).run(shopDomain, enc, scopes ?? null);
+  ).run(shopDomain, enc, scopes ?? null, refEnc, expiresAt);
   return getShopByDomain(db, shopDomain);
+}
+
+// Persist a rotated token set after a refresh (keeps the same shop row).
+export function updateShopTokens(db, shopId, { accessToken, refreshToken = null, expiresIn = null }) {
+  const enc = accessToken != null ? encrypt(accessToken) : null;
+  const refEnc = refreshToken != null ? encrypt(refreshToken) : null;
+  const expiresAt = expiresIn != null ? Date.now() + expiresIn * 1000 : null;
+  db.prepare("UPDATE shops SET access_token_enc = ?, refresh_token_enc = ?, token_expires_at = ? WHERE id = ?")
+    .run(enc, refEnc, expiresAt, shopId);
+  return db.prepare("SELECT * FROM shops WHERE id = ?").get(shopId);
 }
 
 export function getShopByDomain(db, domain) {
@@ -57,6 +82,10 @@ export function getShopByDomain(db, domain) {
 export function decryptToken(shopRow) {
   if (!shopRow?.access_token_enc) throw new Error("Shop has no stored token (uninstalled?).");
   return decrypt(shopRow.access_token_enc);
+}
+
+export function decryptRefreshToken(shopRow) {
+  return shopRow?.refresh_token_enc ? decrypt(shopRow.refresh_token_enc) : null;
 }
 
 export function issueMcpCredential(db, shopId) {
@@ -78,7 +107,7 @@ export function resolveTenant(db, clientId, secret) {
 }
 
 export function markUninstalled(db, domain) {
-  db.prepare("UPDATE shops SET uninstalled_at = datetime('now'), access_token_enc = NULL WHERE shop_domain = ?").run(domain);
+  db.prepare("UPDATE shops SET uninstalled_at = datetime('now'), access_token_enc = NULL, refresh_token_enc = NULL, token_expires_at = NULL WHERE shop_domain = ?").run(domain);
 }
 
 // --- OAuth CSRF state (single-use nonce tying an install to its callback) ---
