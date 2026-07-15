@@ -39,7 +39,7 @@ function privacyHtml() {
     `<title>ShopTalk — Privacy Policy</title>` +
     `<style>body{max-width:44rem;margin:2.5rem auto;padding:0 1.2rem;` +
     `font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#1b1b1b}` +
-    `h1,h2{line-height:1.25} code,pre{background:#f4f4f5;padding:.12em .35em;border-radius:4px} a{color:#2563eb}</style>` +
+    `h1,h2{line-height:1.25} code,pre{background:#f4f4f5;padding:.12em .35em;border-radius:4px} a{color:#5E8E3E}</style>` +
     `</head><body>${body}</body></html>`;
   return _privacyHtml;
 }
@@ -55,7 +55,7 @@ function appHome({ command }) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ShopTalk</title>` +
     `<style>body{max-width:44rem;margin:3rem auto;padding:0 1.2rem;font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#1b1b1b}` +
     `.brand{display:flex;align-items:center;gap:.6rem;font-weight:700;font-size:1.35rem}` +
-    `.logo{width:40px;height:40px;border-radius:11px;background:linear-gradient(135deg,#6D5AF0,#8B5CF6)}` +
+    `.logo{width:40px;height:40px;border-radius:11px;background:linear-gradient(135deg,#95BF47,#5E8E3E)}` +
     `h1{font-size:1.5rem;margin:1.4rem 0 .4rem}h2{font-size:1.1rem;margin:1.6rem 0 .4rem}` +
     `pre{background:#f4f4f5;padding:.9rem 1rem;border-radius:10px;overflow-x:auto;font-size:.86rem}` +
     `.muted{color:#6b7280}ul{padding-left:1.1rem}li{margin:.2rem 0}</style></head><body>` +
@@ -84,12 +84,12 @@ function connectPage({ error } = {}) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connect ShopTalk</title>` +
     `<style>body{max-width:44rem;margin:3rem auto;padding:0 1.2rem;font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#1b1b1b}` +
     `.brand{display:flex;align-items:center;gap:.6rem;font-weight:700;font-size:1.35rem}` +
-    `.logo{width:40px;height:40px;border-radius:11px;background:linear-gradient(135deg,#6D5AF0,#8B5CF6)}` +
+    `.logo{width:40px;height:40px;border-radius:11px;background:linear-gradient(135deg,#95BF47,#5E8E3E)}` +
     `h1{font-size:1.5rem;margin:1.4rem 0 .4rem}h2{font-size:1.05rem;margin:1.6rem 0 .5rem}` +
     `code{background:#f4f4f5;padding:.1em .35em;border-radius:5px;font-size:.9em}ol{padding-left:1.2rem}li{margin:.35rem 0}` +
     `label{display:block;margin:.9rem 0 .3rem;font-weight:600}input{width:100%;box-sizing:border-box;padding:.7rem .8rem;border:1px solid #d1d5db;border-radius:9px;font-size:1rem}` +
-    `button{margin-top:1.2rem;background:#6D5AF0;color:#fff;border:0;padding:.75rem 1.4rem;border-radius:9px;font-size:1rem;font-weight:600;cursor:pointer}` +
-    `.err{color:#b91c1c;background:#fef2f2;padding:.7rem 1rem;border-radius:9px}.muted{color:#6b7280}a{color:#6D5AF0}</style></head><body>` +
+    `button{margin-top:1.2rem;background:#5E8E3E;color:#fff;border:0;padding:.75rem 1.4rem;border-radius:9px;font-size:1rem;font-weight:600;cursor:pointer}` +
+    `.err{color:#b91c1c;background:#fef2f2;padding:.7rem 1rem;border-radius:9px}.muted{color:#6b7280}a{color:#5E8E3E}</style></head><body>` +
     `<div class="brand"><div class="logo"></div>ShopTalk</div>` +
     `<h1>Connect your store</h1>` +
     `<p>ShopTalk lets you text your Shopify store from Poke. Connect it with a token from your own Shopify admin — no app install needed.</p>` +
