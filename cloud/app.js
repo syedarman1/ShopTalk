@@ -40,11 +40,23 @@ function privacyHtml() {
     `<style>body{max-width:44rem;margin:2.5rem auto;padding:0 1.2rem;` +
     `font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#1b1b1b}` +
     `h1,h2{line-height:1.25} code,pre{background:#f4f4f5;padding:.12em .35em;border-radius:4px} a{color:#5E8E3E}</style>` +
-    `</head><body>${body}</body></html>`;
+    `</head><body><div style="margin-bottom:.7rem">${brandMark(44)}</div>${body}</body></html>`;
   return _privacyHtml;
 }
 
 const escapeHtml = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+// Inline ShopTalk mark (Shopify-green bag + typing dots) — used as the logo on
+// every served page so the brand shows, not just a blank gradient square.
+function brandMark(size = 40) {
+  return `<svg width="${size}" height="${size}" viewBox="0 0 100 100" role="img" aria-label="ShopTalk logo" style="display:block;flex:0 0 auto">` +
+    `<defs><linearGradient id="bm" x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#95BF47"/><stop offset="1" stop-color="#5E8E3E"/></linearGradient></defs>` +
+    `<rect width="100" height="100" rx="26" fill="url(#bm)"/>` +
+    `<g fill="none" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"><path d="M39 47 C39 31 52 31 52 47"/><path d="M54 47 C54 31 67 31 67 47"/></g>` +
+    `<rect x="31" y="45" width="44" height="39" rx="10" fill="#FFFFFF"/>` +
+    `<circle cx="42" cy="66" r="3.6" fill="#4E8B3F"/><circle cx="53" cy="66" r="3.6" fill="#6FA83E"/><circle cx="64" cy="66" r="3.6" fill="#95BF47"/>` +
+    `</svg>`;
+}
 
 // The app's merchant-facing "home" (non-embedded UI): the post-auth redirect
 // lands here, and it reveals the one-time Poke connection command when present.
@@ -59,7 +71,7 @@ function appHome({ command }) {
     `h1{font-size:1.5rem;margin:1.4rem 0 .4rem}h2{font-size:1.1rem;margin:1.6rem 0 .4rem}` +
     `pre{background:#f4f4f5;padding:.9rem 1rem;border-radius:10px;overflow-x:auto;font-size:.86rem}` +
     `.muted{color:#6b7280}ul{padding-left:1.1rem}li{margin:.2rem 0}</style></head><body>` +
-    `<div class="brand"><div class="logo"></div>ShopTalk</div>` +
+    `<div class="brand">${brandMark(40)}ShopTalk</div>` +
     `<h1>ShopTalk is connected \u{1F389}</h1>${key}` +
     `<h2>How to use it</h2><p>Text your store from the Messages app on your iPhone, through Poke. For example:</p>` +
     `<ul><li>&ldquo;How did sales go last week?&rdquo;</li><li>&ldquo;Any open chargebacks?&rdquo;</li><li>&ldquo;What inventory is low?&rdquo;</li><li>&ldquo;Cancel and refund order #1042&rdquo; — ShopTalk asks you to confirm first.</li></ul>` +
@@ -90,7 +102,7 @@ function connectPage({ error } = {}) {
     `label{display:block;margin:.9rem 0 .3rem;font-weight:600}input{width:100%;box-sizing:border-box;padding:.7rem .8rem;border:1px solid #d1d5db;border-radius:9px;font-size:1rem}` +
     `button{margin-top:1.2rem;background:#5E8E3E;color:#fff;border:0;padding:.75rem 1.4rem;border-radius:9px;font-size:1rem;font-weight:600;cursor:pointer}` +
     `.err{color:#b91c1c;background:#fef2f2;padding:.7rem 1rem;border-radius:9px}.muted{color:#6b7280}a{color:#5E8E3E}</style></head><body>` +
-    `<div class="brand"><div class="logo"></div>ShopTalk</div>` +
+    `<div class="brand">${brandMark(40)}ShopTalk</div>` +
     `<h1>Connect your store</h1>` +
     `<p>ShopTalk lets you text your Shopify store from Poke. Connect it with a token from your own Shopify admin — no app install needed.</p>` +
     `<h2>1 &middot; Create a token in Shopify</h2>` +
