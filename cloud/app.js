@@ -59,7 +59,19 @@ export function createApp(db) {
 
   app.use(express.json());
 
-  app.get("/healthz", (_req, res) => res.json({ ok: true }));
+  // Readiness probe: reports whether the required env vars reached this
+  // process. Secret VALUES are never echoed (booleans only); clientId and
+  // appUrl are public (they appear in the OAuth redirect), so echoing them
+  // aids deploy debugging.
+  app.get("/healthz", (_req, res) => res.json({
+    ok: true,
+    config: {
+      clientId: config.clientId || null,
+      clientSecret: Boolean(config.clientSecret),
+      encKey: Boolean(process.env.CLOUD_ENC_KEY),
+      appUrl: config.appUrl,
+    },
+  }));
 
   // --- Shopify OAuth: merchant install ---
   app.get("/install", (req, res) => {
