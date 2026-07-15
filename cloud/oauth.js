@@ -8,10 +8,13 @@ export function isValidShopDomain(shop) {
 }
 
 export function installUrl(shop, state, { clientId, appUrl, scopes }) {
+  // Strip any trailing slash so a misconfigured APP_URL can't produce a
+  // "//auth/callback" that mismatches the app's registered redirect URL.
+  const base = String(appUrl).replace(/\/+$/, "");
   const p = new URLSearchParams({
     client_id: clientId,
     scope: scopes,
-    redirect_uri: `${appUrl}/auth/callback`,
+    redirect_uri: `${base}/auth/callback`,
     state,
   });
   return `https://${shop}/admin/oauth/authorize?${p.toString()}`;

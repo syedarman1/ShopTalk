@@ -23,6 +23,11 @@ test("installUrl targets the shop's authorize endpoint with our params", () => {
   assert.equal(u.searchParams.get("state"), "STATE1");
 });
 
+test("installUrl tolerates a trailing slash on appUrl (no // in redirect_uri)", () => {
+  const u = new URL(installUrl("acme.myshopify.com", "S", { clientId: "cid", appUrl: "https://c.app/", scopes: "read_orders" }));
+  assert.equal(u.searchParams.get("redirect_uri"), "https://c.app/auth/callback");
+});
+
 test("verifyQueryHmac accepts a correctly-signed query and rejects tampering", () => {
   const secret = "shh";
   const params = { shop: "acme.myshopify.com", code: "abc", state: "S", timestamp: "123" };
