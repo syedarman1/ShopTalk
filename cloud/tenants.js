@@ -21,6 +21,11 @@ CREATE TABLE IF NOT EXISTS mcp_credentials (
   client_id TEXT UNIQUE NOT NULL,
   client_secret_hash TEXT NOT NULL,
   created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS oauth_states (
+  state TEXT PRIMARY KEY,
+  shop_domain TEXT NOT NULL,
+  created_at TEXT DEFAULT (datetime('now'))
 );`;
 
 export function openCloudDb(path = process.env.CLOUD_DB || "./data/cloud.db") {
@@ -74,4 +79,17 @@ export function resolveTenant(db, clientId, secret) {
 
 export function markUninstalled(db, domain) {
   db.prepare("UPDATE shops SET uninstalled_at = datetime('now'), access_token_enc = NULL WHERE shop_domain = ?").run(domain);
+}
+
+// --- OAuth CSRF state (single-use nonce tying an install to its callback) ---
+export function createState(db, shopDomain) {
+  const state = randomBytes(16).toString("base64url");
+  db.prepare("INSERT INTO oauth_states (state, shop_domain) VALUES (?, ?)").run(state, shopDomain);
+  return state;
+}
+
+export function takeState(db, state) {
+  const row = db.prepare("SELECT * FROM oauth_states WHERE state = ?").get(state);
+  if (row) db.prepare("DELETE FROM oauth_states WHERE state = ?").run(state);
+  return row;
 }
