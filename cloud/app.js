@@ -6,8 +6,15 @@ import express from "express";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { createMcpServer } from "../backend/mcp-tools.js";
 import { runInTenant } from "../backend/context.js";
-import { openCloudDb, resolveTenant } from "./tenants.js";
+import {
+  openCloudDb, resolveTenant, upsertShop, issueMcpCredential,
+  markUninstalled, createState, takeState,
+} from "./tenants.js";
 import { tenantStore } from "./tenant-store.js";
+import { config } from "./config.js";
+import {
+  installUrl, isValidShopDomain, verifyQueryHmac, verifyWebhookHmac, exchangeCodeForToken,
+} from "./oauth.js";
 
 // The streamable-HTTP transport needs both Accept types; force it.
 function forceAccept(req) {
@@ -25,9 +32,62 @@ function forceAccept(req) {
 
 export function createApp(db) {
   const app = express();
+
+  // Webhooks need the RAW body for HMAC — mount before express.json().
+  const raw = express.raw({ type: "application/json" });
+  function webhook(path, handler) {
+    app.post(path, raw, (req, res) => {
+      if (!verifyWebhookHmac(config.clientSecret, req.body, req.get("X-Shopify-Hmac-Sha256"))) {
+        return res.status(401).json({ error: "invalid hmac" });
+      }
+      let payload = {};
+      try { payload = JSON.parse(req.body.toString("utf8") || "{}"); } catch { /* empty */ }
+      return handler(req, res, payload);
+    });
+  }
+  webhook("/webhooks/app/uninstalled", (req, res, p) => {
+    const shop = p.domain || req.get("X-Shopify-Shop-Domain");
+    if (shop) markUninstalled(db, shop);
+    res.status(200).json({ ok: true });
+  });
+  webhook("/webhooks/shop/redact", (req, res, p) => {
+    if (p.shop_domain) markUninstalled(db, p.shop_domain);
+    res.status(200).json({ ok: true });
+  });
+  webhook("/webhooks/customers/redact", (_req, res) => res.status(200).json({ ok: true, note: "No customer data retained." }));
+  webhook("/webhooks/customers/data_request", (_req, res) => res.status(200).json({ ok: true, note: "No customer data retained." }));
+
   app.use(express.json());
 
   app.get("/healthz", (_req, res) => res.json({ ok: true }));
+
+  // --- Shopify OAuth: merchant install ---
+  app.get("/install", (req, res) => {
+    const shop = String(req.query.shop || "");
+    if (!isValidShopDomain(shop)) return res.status(400).send("Invalid shop. Use your-store.myshopify.com.");
+    const state = createState(db, shop);
+    res.redirect(302, installUrl(shop, state, config));
+  });
+
+  app.get("/auth/callback", async (req, res) => {
+    try {
+      const shop = String(req.query.shop || "");
+      if (!isValidShopDomain(shop)) return res.status(400).send("Invalid shop.");
+      if (!verifyQueryHmac(config.clientSecret, req.query)) return res.status(401).send("HMAC verification failed.");
+      const st = takeState(db, String(req.query.state || ""));
+      if (!st || st.shop_domain !== shop) return res.status(400).send("Invalid or expired state.");
+      const { accessToken, scopes } = await exchangeCodeForToken(shop, String(req.query.code), config);
+      const row = upsertShop(db, { shopDomain: shop, accessToken, scopes });
+      const { clientId, secret } = issueMcpCredential(db, row.id);
+      res.status(200).send(
+        `<h2>ShopTalk connected \u{1F389}</h2><p>Connect Poke with:</p>` +
+        `<pre>npx poke@latest mcp add ${config.appUrl}/mcp -n ShopTalk -k ${clientId}:${secret}</pre>` +
+        `<p>Save this key — it is shown once.</p>`
+      );
+    } catch (err) {
+      res.status(502).send(`Install failed: ${err.message}`);
+    }
+  });
 
   // Bearer / X-API-Key carries "clientId:secret" for one shop.
   function authTenant(req) {
