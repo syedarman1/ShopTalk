@@ -23,6 +23,24 @@ respond as soon as I can.
   accepting local (loopback) requests only — so a deployed instance is never
   wide open by default.
 
+## Incident response
+
+If a security incident is suspected (leaked credential, unauthorized access, or
+data exposure) in ShopTalk or ShopTalk Cloud:
+
+1. **Contain** — revoke the affected credential immediately: rotate the Shopify
+   Client Secret, regenerate `CLOUD_ENC_KEY` if stored tokens are implicated, and
+   invalidate the affected per-merchant MCP credentials.
+2. **Assess** — review the `/mcp` access logs (tenant, tool, timestamp) to scope
+   which stores and time window are affected.
+3. **Notify** — inform affected merchants, and where a store's data is involved
+   notify Shopify, without undue delay after confirming the incident.
+4. **Recover** — force re-install (re-issuing tokens + credentials) for affected
+   stores and confirm the vector is closed.
+5. **Review** — record the cause and the fix so it can't recur.
+
+Disclosures and reports go to **syedarman2003@gmail.com**.
+
 ## Supported version
 
 The `main` branch is the supported version.
